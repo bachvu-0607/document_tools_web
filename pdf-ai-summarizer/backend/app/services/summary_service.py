@@ -13,13 +13,14 @@ from app.prompts.instructions import (
     TONE_INSTRUCTIONS,
 )
 
-async def create_summary(request: SummaryRequest) -> SummaryResponse:
+async def create_summary(request: SummaryRequest, user_id: str) -> SummaryResponse:
     text = get_pdf_text(request.document_id, request.extraction_mode)
     prompt: str = build_prompt_from_request(request= request, text=text)
     summary: str = generate_summary_from_prompt(prompt=prompt)
 
     await save_summary_record(
         document_id=request.document_id,
+        user_id=user_id,
         document_name=request.document_name,
         summary_text=summary,
         at_time=datetime.datetime.now().isoformat(),

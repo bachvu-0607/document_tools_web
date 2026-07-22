@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.documents import router as documents_router
 from app.api.images import router as images_router
@@ -10,12 +11,15 @@ from app.api.omr import router as omr_router
 from app.api.summaries import router as summaries_router
 from app.api.translations import router as translations_router
 from app.core.config import settings
+from app.core.auth_database import init_auth_db
 from app.core.database import init_db
 from app.core.omr_database import init_omr_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Bang users phai co truoc, cac bang khac se tham chieu user_id toi day.
+    await init_auth_db()
     # Chay 1 lan luc server khoi dong, tao bang summary_history neu chua co.
     await init_db()
     # Tao bang omr_sheets neu chua co (module OMR, tach rieng khoi summary_history).
@@ -40,6 +44,7 @@ app.add_middleware(
 )
 
 # Gan nhom endpoint health vao prefix /api, thanh /api/health.
+app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(health_router, prefix=settings.api_prefix)
 app.include_router(documents_router, prefix=settings.api_prefix)
 app.include_router(images_router, prefix=settings.api_prefix)

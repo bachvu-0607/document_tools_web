@@ -54,8 +54,10 @@ def _row_to_response(row) -> OmrTemplateResponse:
     )
 
 
-async def create_omr_template(request: OmrTemplateCreateRequest) -> OmrTemplateResponse:
-    if await get_sheet(request.reference_sheet_id) is None:
+async def create_omr_template(request: OmrTemplateCreateRequest, user_id: str) -> OmrTemplateResponse:
+    # get_sheet da tu loc theo user_id - phieu cua nguoi khac se coi nhu
+    # "khong ton tai" o day, khong the tao mau tro toi anh khong phai cua minh.
+    if await get_sheet(request.reference_sheet_id, user_id) is None:
         raise HTTPException(status_code=404, detail="Reference sheet not found")
 
     _validate_zone(request.sbd_zone, "SBD")
@@ -74,6 +76,7 @@ async def create_omr_template(request: OmrTemplateCreateRequest) -> OmrTemplateR
 
     await save_template_record(
         template_id=template_id,
+        user_id=user_id,
         name=request.name.strip() or "Mau phieu chua dat ten",
         reference_sheet_id=request.reference_sheet_id,
         sbd_zone=request.sbd_zone.model_dump_json(),
@@ -85,24 +88,24 @@ async def create_omr_template(request: OmrTemplateCreateRequest) -> OmrTemplateR
         created_at=created_at,
     )
 
-    row = await get_template(template_id)
+    row = await get_template(template_id, user_id)
     return _row_to_response(row)
 
 
-async def list_omr_templates() -> list[OmrTemplateResponse]:
-    rows = await list_templates()
+async def list_omr_templates(user_id: str) -> list[OmrTemplateResponse]:
+    rows = await list_templates(user_id)
     return [_row_to_response(row) for row in rows]
 
 
-async def get_omr_template(template_id: str) -> OmrTemplateResponse:
-    row = await get_template(template_id)
+async def get_omr_template(template_id: str, user_id: str) -> OmrTemplateResponse:
+    row = await get_template(template_id, user_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Template not found")
     return _row_to_response(row)
 
 
-async def delete_omr_template(template_id: str) -> None:
-    if await get_template(template_id) is None:
+async def delete_omr_template(template_id: str, user_id: str) -> None:
+    if await get_template(template_id, user_id) is None:
         raise HTTPException(status_code=404, detail="Template not found")
 
     usages = await find_template_usages(template_id)

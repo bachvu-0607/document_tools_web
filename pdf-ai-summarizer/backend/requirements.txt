@@ -16,5 +16,7 @@ openpyxl
 opencv-python-headless
 numpy
 aiosqlite
+bcrypt
+pyjwt
 pytest
 httpx

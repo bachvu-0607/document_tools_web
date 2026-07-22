@@ -27,8 +27,10 @@ def _row_to_response(row) -> OmrAnswerKeyResponse:
     )
 
 
-async def create_answer_key(request: OmrAnswerKeyCreateRequest) -> OmrAnswerKeyResponse:
-    template = await get_omr_template(request.template_id)
+async def create_answer_key(request: OmrAnswerKeyCreateRequest, user_id: str) -> OmrAnswerKeyResponse:
+    # get_omr_template da tu loc theo user_id - khong the tao dap an dua tren
+    # mau cua nguoi khac.
+    template = await get_omr_template(request.template_id, user_id)
     total_questions = sum(block.num_questions for block in template.answer_blocks)
     if len(request.answers) != total_questions:
         raise HTTPException(
@@ -41,6 +43,7 @@ async def create_answer_key(request: OmrAnswerKeyCreateRequest) -> OmrAnswerKeyR
 
     await save_answer_key_record(
         answer_key_id=answer_key_id,
+        user_id=user_id,
         name=request.name.strip() or "Dap an chua dat ten",
         template_id=request.template_id,
         source_sheet_id=request.source_sheet_id,
@@ -50,23 +53,23 @@ async def create_answer_key(request: OmrAnswerKeyCreateRequest) -> OmrAnswerKeyR
         created_at=created_at,
     )
 
-    row = await get_answer_key(answer_key_id)
+    row = await get_answer_key(answer_key_id, user_id)
     return _row_to_response(row)
 
 
-async def list_omr_answer_keys() -> list[OmrAnswerKeyResponse]:
-    rows = await list_answer_keys()
+async def list_omr_answer_keys(user_id: str) -> list[OmrAnswerKeyResponse]:
+    rows = await list_answer_keys(user_id)
     return [_row_to_response(row) for row in rows]
 
 
-async def get_omr_answer_key(answer_key_id: str) -> OmrAnswerKeyResponse:
-    row = await get_answer_key(answer_key_id)
+async def get_omr_answer_key(answer_key_id: str, user_id: str) -> OmrAnswerKeyResponse:
+    row = await get_answer_key(answer_key_id, user_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Answer key not found")
     return _row_to_response(row)
 
 
-async def delete_omr_answer_key(answer_key_id: str) -> None:
-    if await get_answer_key(answer_key_id) is None:
+async def delete_omr_answer_key(answer_key_id: str, user_id: str) -> None:
+    if await get_answer_key(answer_key_id, user_id) is None:
         raise HTTPException(status_code=404, detail="Answer key not found")
     await delete_answer_key_record(answer_key_id)

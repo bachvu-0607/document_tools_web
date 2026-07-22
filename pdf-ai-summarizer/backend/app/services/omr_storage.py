@@ -35,7 +35,7 @@ def _row_to_response(row) -> OmrSheetResponse:
     )
 
 
-async def save_omr_sheet(file: UploadFile, label: str) -> OmrSheetResponse:
+async def save_omr_sheet(file: UploadFile, label: str, user_id: str) -> OmrSheetResponse:
     original_filename = file.filename or ""
     ext = original_filename.rsplit(".", 1)[-1].lower() if "." in original_filename else ""
     if ext not in ALLOWED_EXTENSIONS:
@@ -59,6 +59,7 @@ async def save_omr_sheet(file: UploadFile, label: str) -> OmrSheetResponse:
 
     await save_sheet_record(
         sheet_id=sheet_id,
+        user_id=user_id,
         label=display_label,
         original_filename=original_filename,
         stored_filename=stored_filename,
@@ -75,13 +76,13 @@ async def save_omr_sheet(file: UploadFile, label: str) -> OmrSheetResponse:
     )
 
 
-async def list_omr_sheets() -> list[OmrSheetResponse]:
-    rows = await list_sheets()
+async def list_omr_sheets(user_id: str) -> list[OmrSheetResponse]:
+    rows = await list_sheets(user_id)
     return [_row_to_response(row) for row in rows]
 
 
-async def get_omr_sheet_file(sheet_id: str) -> tuple[bytes, str]:
-    row = await get_sheet(sheet_id)
+async def get_omr_sheet_file(sheet_id: str, user_id: str) -> tuple[bytes, str]:
+    row = await get_sheet(sheet_id, user_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Sheet not found")
 
@@ -92,8 +93,8 @@ async def get_omr_sheet_file(sheet_id: str) -> tuple[bytes, str]:
     return file_path.read_bytes(), row["content_type"]
 
 
-async def delete_omr_sheet(sheet_id: str) -> None:
-    row = await get_sheet(sheet_id)
+async def delete_omr_sheet(sheet_id: str, user_id: str) -> None:
+    row = await get_sheet(sheet_id, user_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Sheet not found")
 
@@ -114,11 +115,11 @@ async def delete_omr_sheet(sheet_id: str) -> None:
     await delete_sheet_record(sheet_id)
 
 
-async def get_omr_sheet_aligned_bytes(sheet_id: str) -> tuple[bytes, bool]:
+async def get_omr_sheet_aligned_bytes(sheet_id: str, user_id: str) -> tuple[bytes, bool]:
     # Anh da duoc nan thang theo 4 dau goc den (hoac giu nguyen neu khong tim
     # du 4 dau goc) - dung LAM CHUAN cho ca man hinh khoanh vung mau lan buoc
     # detect that, de 2 ben luon cung 1 he toa do %, khong bi lech nhau.
-    file_bytes, _ = await get_omr_sheet_file(sheet_id)
+    file_bytes, _ = await get_omr_sheet_file(sheet_id, user_id)
     array = np.frombuffer(file_bytes, dtype=np.uint8)
     color = cv2.imdecode(array, cv2.IMREAD_COLOR)
     if color is None:

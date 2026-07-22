@@ -35,23 +35,24 @@ def _row_to_response(row) -> OmrGradedResultResponse:
     )
 
 
-async def save_graded_results(request: OmrGradedResultSaveRequest) -> list[OmrGradedResultResponse]:
+async def save_graded_results(request: OmrGradedResultSaveRequest, user_id: str) -> list[OmrGradedResultResponse]:
     class_name = request.class_name.strip()
     if not class_name:
         raise HTTPException(status_code=400, detail="Ten lop khong duoc de trong")
     if not request.sheet_ids:
         raise HTTPException(status_code=400, detail="Chua co phieu nao de luu")
 
-    answer_key = await get_omr_answer_key(request.answer_key_id)
+    answer_key = await get_omr_answer_key(request.answer_key_id, user_id)
     saved_at = datetime.datetime.now().isoformat()
 
     responses: list[OmrGradedResultResponse] = []
     for sheet_id in request.sheet_ids:
         # Tinh lai diem tu server (khong tin so lieu tu client) - dam bao ban
         # luu luon la ban moi nhat, khop voi du lieu detection hien co.
-        grade = await grade_sheet(answer_key, sheet_id)
+        grade = await grade_sheet(answer_key, sheet_id, user_id)
         await save_graded_result_record(
             result_id=str(uuid4()),
+            user_id=user_id,
             class_name=class_name,
             sheet_id=grade.sheet_id,
             sheet_label=grade.sheet_label,
@@ -67,19 +68,19 @@ async def save_graded_results(request: OmrGradedResultSaveRequest) -> list[OmrGr
             aligned=grade.aligned,
             saved_at=saved_at,
         )
-        row = await get_graded_result_by_sheet_and_key(sheet_id, answer_key.id)
+        row = await get_graded_result_by_sheet_and_key(sheet_id, answer_key.id, user_id)
         if row is not None:
             responses.append(_row_to_response(row))
 
     return responses
 
 
-async def list_omr_graded_results() -> list[OmrGradedResultResponse]:
-    rows = await list_graded_results()
+async def list_omr_graded_results(user_id: str) -> list[OmrGradedResultResponse]:
+    rows = await list_graded_results(user_id)
     return [_row_to_response(row) for row in rows]
 
 
-async def delete_omr_graded_result(result_id: str) -> None:
-    if await get_graded_result(result_id) is None:
+async def delete_omr_graded_result(result_id: str, user_id: str) -> None:
+    if await get_graded_result(result_id, user_id) is None:
         raise HTTPException(status_code=404, detail="Result not found")
     await delete_graded_result_record(result_id)

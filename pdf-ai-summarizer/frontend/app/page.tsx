@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 
+import { AuthGate } from "@/components/AuthGate";
 import { Banner } from "@/components/Banner";
 import { ConnectionBadge } from "@/components/ConnectionBadge";
 import type { ConnectionState } from "@/components/ConnectionBadge";
@@ -26,6 +27,7 @@ import type {
 } from "@/types/document";
 import type { HealthResponse } from "@/types/health";
 import type { SummaryResponse } from "@/types/summary";
+import type { UserInfo } from "@/types/auth";
 
 type RequestState = "idle" | "uploading" | "previewing" | "summarizing";
 
@@ -86,6 +88,19 @@ const tabConfig: { id: RightPanelTab; label: string; activeClassName: string }[]
 ];
 
 export default function HomePage() {
+  return (
+    <AuthGate>
+      {(user, onLogout) => <HomePageContent user={user} onLogout={onLogout} />}
+    </AuthGate>
+  );
+}
+
+type HomePageContentProps = {
+  user: UserInfo;
+  onLogout: () => void;
+};
+
+function HomePageContent({ user, onLogout }: HomePageContentProps) {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("checking");
   const [requestState, setRequestState] = useState<RequestState>("idle");
@@ -250,7 +265,19 @@ export default function HomePage() {
             </div>
           </div>
 
-          <ConnectionBadge state={connectionState} health={health} onRefresh={checkBackend} />
+          <div className="flex items-center gap-3">
+            <ConnectionBadge state={connectionState} health={health} onRefresh={checkBackend} />
+            <div className="flex items-center gap-2 rounded-full border border-zinc-300/80 bg-white/90 py-1 pl-3 pr-1 text-sm shadow-sm dark:border-zinc-800/80 dark:bg-zinc-900/90">
+              <span className="text-zinc-600 dark:text-zinc-400">{user.display_name}</span>
+              <button
+                className="rounded-full px-2.5 py-1 text-xs font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                onClick={onLogout}
+                type="button"
+              >
+                Đăng xuất
+              </button>
+            </div>
+          </div>
         </header>
 
         {errorMessage ? <Banner variant="error">{errorMessage}</Banner> : null}

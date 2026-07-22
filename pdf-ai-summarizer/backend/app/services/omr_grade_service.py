@@ -33,11 +33,11 @@ def _compare(correct_answers: list[str], detection_answers: list[str], ambiguous
     return questions
 
 
-async def grade_sheet(answer_key: OmrAnswerKeyResponse, sheet_id: str) -> OmrGradeSheetResult:
-    sheet_row = await get_sheet(sheet_id)
+async def grade_sheet(answer_key: OmrAnswerKeyResponse, sheet_id: str, user_id: str) -> OmrGradeSheetResult:
+    sheet_row = await get_sheet(sheet_id, user_id)
     sheet_label = sheet_row["label"] if sheet_row else sheet_id
 
-    detection = await get_or_run_detection(answer_key.template_id, sheet_id)
+    detection = await get_or_run_detection(answer_key.template_id, sheet_id, user_id)
     questions = _compare(answer_key.answers, detection.answers, detection.ambiguous_questions)
 
     correct_count = sum(1 for q in questions if q.status == "correct")
@@ -62,7 +62,7 @@ async def grade_sheet(answer_key: OmrAnswerKeyResponse, sheet_id: str) -> OmrGra
     )
 
 
-async def grade_sheets_batch(answer_key_id: str, sheet_ids: list[str]) -> OmrGradeBatchResponse:
-    answer_key = await get_omr_answer_key(answer_key_id)
-    results = [await grade_sheet(answer_key, sheet_id) for sheet_id in sheet_ids]
+async def grade_sheets_batch(answer_key_id: str, sheet_ids: list[str], user_id: str) -> OmrGradeBatchResponse:
+    answer_key = await get_omr_answer_key(answer_key_id, user_id)
+    results = [await grade_sheet(answer_key, sheet_id, user_id) for sheet_id in sheet_ids]
     return OmrGradeBatchResponse(answer_key_id=answer_key_id, results=results)

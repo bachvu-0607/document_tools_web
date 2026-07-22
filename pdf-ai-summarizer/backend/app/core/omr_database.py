@@ -8,6 +8,7 @@ async def init_omr_db() -> None:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS omr_sheets (
                 id TEXT PRIMARY KEY,
+                user_id TEXT,
                 label TEXT NOT NULL,
                 original_filename TEXT NOT NULL,
                 stored_filename TEXT NOT NULL,
@@ -18,6 +19,7 @@ async def init_omr_db() -> None:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS omr_templates (
                 id TEXT PRIMARY KEY,
+                user_id TEXT,
                 name TEXT NOT NULL,
                 reference_sheet_id TEXT NOT NULL,
                 sbd_zone TEXT NOT NULL,
@@ -32,6 +34,7 @@ async def init_omr_db() -> None:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS omr_detections (
                 sheet_id TEXT PRIMARY KEY,
+                user_id TEXT,
                 template_id TEXT NOT NULL,
                 sbd TEXT NOT NULL,
                 sbd_ambiguous_digits TEXT NOT NULL,
@@ -43,15 +46,10 @@ async def init_omr_db() -> None:
                 aligned INTEGER NOT NULL DEFAULT 1
             );
         """)
-        # Bang co the da ton tai tu truoc khi them cot "aligned" - them bang
-        # ALTER TABLE (khong xoa du lieu cu) thay vi drop/tao lai.
-        try:
-            await conn.execute("ALTER TABLE omr_detections ADD COLUMN aligned INTEGER NOT NULL DEFAULT 1;")
-        except aiosqlite.OperationalError:
-            pass  # cot da ton tai roi, bo qua
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS omr_answer_keys (
                 id TEXT PRIMARY KEY,
+                user_id TEXT,
                 name TEXT NOT NULL,
                 template_id TEXT NOT NULL,
                 source_sheet_id TEXT NOT NULL,
@@ -64,6 +62,7 @@ async def init_omr_db() -> None:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS omr_graded_results (
                 id TEXT PRIMARY KEY,
+                user_id TEXT,
                 class_name TEXT NOT NULL,
                 sheet_id TEXT NOT NULL,
                 sheet_label TEXT NOT NULL,
@@ -81,11 +80,32 @@ async def init_omr_db() -> None:
                 UNIQUE(sheet_id, answer_key_id)
             );
         """)
+        # Cac bang co the da ton tai tu truoc khi co tinh nang dang nhap - them
+        # cot user_id bang ALTER TABLE (khong xoa du lieu cu) thay vi drop/tao
+        # lai. Du lieu cu (chua co user_id) se mang gia tri NULL - vo hinh voi
+        # moi tai khoan (khong ai truy van WHERE user_id = NULL khop ca), coi
+        # nhu "khong co chu", an toan hon la gan bua cho 1 nguoi nao do.
+        for table, column in [
+            ("omr_sheets", "user_id"),
+            ("omr_templates", "user_id"),
+            ("omr_detections", "user_id"),
+            ("omr_answer_keys", "user_id"),
+            ("omr_graded_results", "user_id"),
+        ]:
+            try:
+                await conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT;")
+            except aiosqlite.OperationalError:
+                pass  # cot da ton tai roi, bo qua
+        try:
+            await conn.execute("ALTER TABLE omr_detections ADD COLUMN aligned INTEGER NOT NULL DEFAULT 1;")
+        except aiosqlite.OperationalError:
+            pass  # cot da ton tai roi, bo qua
         await conn.commit()
 
 
 async def save_sheet_record(
     sheet_id: str,
+    user_id: str,
     label: str,
     original_filename: str,
     stored_filename: str,
@@ -96,37 +116,39 @@ async def save_sheet_record(
         await conn.execute(
             """
             INSERT INTO omr_sheets
-                (id, label, original_filename, stored_filename, content_type, uploaded_at)
-            VALUES (?, ?, ?, ?, ?, ?);
+                (id, user_id, label, original_filename, stored_filename, content_type, uploaded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?);
             """,
-            (sheet_id, label, original_filename, stored_filename, content_type, uploaded_at),
+            (sheet_id, user_id, label, original_filename, stored_filename, content_type, uploaded_at),
         )
         await conn.commit()
 
 
-async def list_sheets() -> list[aiosqlite.Row]:
+async def list_sheets(user_id: str) -> list[aiosqlite.Row]:
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
             """
             SELECT id, label, original_filename, stored_filename, content_type, uploaded_at
             FROM omr_sheets
+            WHERE user_id = ?
             ORDER BY uploaded_at DESC;
             """,
+            (user_id,),
         )
         return await cursor.fetchall()
 
 
-async def get_sheet(sheet_id: str) -> aiosqlite.Row | None:
+async def get_sheet(sheet_id: str, user_id: str) -> aiosqlite.Row | None:
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
             """
             SELECT id, label, original_filename, stored_filename, content_type, uploaded_at
             FROM omr_sheets
-            WHERE id = ?;
+            WHERE id = ? AND user_id = ?;
             """,
-            (sheet_id,),
+            (sheet_id, user_id),
         )
         return await cursor.fetchone()
 
@@ -134,7 +156,10 @@ async def get_sheet(sheet_id: str) -> aiosqlite.Row | None:
 async def find_sheet_usages(sheet_id: str) -> tuple[list[str], list[str]]:
     # Truoc khi xoa 1 phieu, can biet no co dang lam anh mau cho template nao
     # hoac lam nguon cho dap an nao khong - xoa mat anh goc trong khi template/
-    # dap an van con tham chieu se lam hong tinh nang cham bai ve sau.
+    # dap an van con tham chieu se lam hong tinh nang cham bai ve sau. Khong can
+    # loc them user_id o day - quyen so huu phieu da duoc kiem tra truoc do boi
+    # ham goi, va template/dap an tro toi phieu nay chi co the do CUNG 1 nguoi
+    # tao (khong ai tao duoc template tro toi phieu cua nguoi khac).
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         template_cursor = await conn.execute(
@@ -167,6 +192,7 @@ TEMPLATE_COLUMNS = """
 
 async def save_template_record(
     template_id: str,
+    user_id: str,
     name: str,
     reference_sheet_id: str,
     sbd_zone: str,
@@ -181,33 +207,34 @@ async def save_template_record(
         await conn.execute(
             """
             INSERT INTO omr_templates
-                (id, name, reference_sheet_id, sbd_zone, sbd_digits, made_zone,
+                (id, user_id, name, reference_sheet_id, sbd_zone, sbd_digits, made_zone,
                  made_digits, answer_blocks, num_choices, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
-                template_id, name, reference_sheet_id, sbd_zone, sbd_digits,
+                template_id, user_id, name, reference_sheet_id, sbd_zone, sbd_digits,
                 made_zone, made_digits, answer_blocks, num_choices, created_at,
             ),
         )
         await conn.commit()
 
 
-async def list_templates() -> list[aiosqlite.Row]:
+async def list_templates(user_id: str) -> list[aiosqlite.Row]:
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
-            f"SELECT {TEMPLATE_COLUMNS} FROM omr_templates ORDER BY created_at DESC;",
+            f"SELECT {TEMPLATE_COLUMNS} FROM omr_templates WHERE user_id = ? ORDER BY created_at DESC;",
+            (user_id,),
         )
         return await cursor.fetchall()
 
 
-async def get_template(template_id: str) -> aiosqlite.Row | None:
+async def get_template(template_id: str, user_id: str) -> aiosqlite.Row | None:
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
-            f"SELECT {TEMPLATE_COLUMNS} FROM omr_templates WHERE id = ?;",
-            (template_id,),
+            f"SELECT {TEMPLATE_COLUMNS} FROM omr_templates WHERE id = ? AND user_id = ?;",
+            (template_id, user_id),
         )
         return await cursor.fetchone()
 
@@ -215,7 +242,8 @@ async def get_template(template_id: str) -> aiosqlite.Row | None:
 async def find_template_usages(template_id: str) -> list[str]:
     # Dap an duoc tao tu 1 mau va khi cham bai luon can doc lai mau do (de biet
     # vi tri o tron) - xoa mat mau ma con dap an tham chieu se lam gay tinh
-    # nang cham bai voi dap an do.
+    # nang cham bai voi dap an do. Khong can loc user_id (ly do giong
+    # find_sheet_usages o tren).
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
@@ -239,6 +267,7 @@ DETECTION_COLUMNS = """
 
 async def save_detection_record(
     sheet_id: str,
+    user_id: str,
     template_id: str,
     sbd: str,
     sbd_ambiguous_digits: str,
@@ -253,10 +282,11 @@ async def save_detection_record(
         await conn.execute(
             """
             INSERT INTO omr_detections
-                (sheet_id, template_id, sbd, sbd_ambiguous_digits, made,
+                (sheet_id, user_id, template_id, sbd, sbd_ambiguous_digits, made,
                  made_ambiguous_digits, answers, ambiguous_questions, detected_at, aligned)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(sheet_id) DO UPDATE SET
+                user_id = excluded.user_id,
                 template_id = excluded.template_id,
                 sbd = excluded.sbd,
                 sbd_ambiguous_digits = excluded.sbd_ambiguous_digits,
@@ -268,7 +298,7 @@ async def save_detection_record(
                 aligned = excluded.aligned;
             """,
             (
-                sheet_id, template_id, sbd, sbd_ambiguous_digits, made,
+                sheet_id, user_id, template_id, sbd, sbd_ambiguous_digits, made,
                 made_ambiguous_digits, answers, ambiguous_questions, detected_at,
                 int(aligned),
             ),
@@ -276,12 +306,12 @@ async def save_detection_record(
         await conn.commit()
 
 
-async def get_detection(sheet_id: str) -> aiosqlite.Row | None:
+async def get_detection(sheet_id: str, user_id: str) -> aiosqlite.Row | None:
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
-            f"SELECT {DETECTION_COLUMNS} FROM omr_detections WHERE sheet_id = ?;",
-            (sheet_id,),
+            f"SELECT {DETECTION_COLUMNS} FROM omr_detections WHERE sheet_id = ? AND user_id = ?;",
+            (sheet_id, user_id),
         )
         return await cursor.fetchone()
 
@@ -291,6 +321,7 @@ ANSWER_KEY_COLUMNS = "id, name, template_id, source_sheet_id, sbd, made, answers
 
 async def save_answer_key_record(
     answer_key_id: str,
+    user_id: str,
     name: str,
     template_id: str,
     source_sheet_id: str,
@@ -303,29 +334,30 @@ async def save_answer_key_record(
         await conn.execute(
             """
             INSERT INTO omr_answer_keys
-                (id, name, template_id, source_sheet_id, sbd, made, answers, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                (id, user_id, name, template_id, source_sheet_id, sbd, made, answers, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
-            (answer_key_id, name, template_id, source_sheet_id, sbd, made, answers, created_at),
+            (answer_key_id, user_id, name, template_id, source_sheet_id, sbd, made, answers, created_at),
         )
         await conn.commit()
 
 
-async def list_answer_keys() -> list[aiosqlite.Row]:
+async def list_answer_keys(user_id: str) -> list[aiosqlite.Row]:
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
-            f"SELECT {ANSWER_KEY_COLUMNS} FROM omr_answer_keys ORDER BY created_at DESC;",
+            f"SELECT {ANSWER_KEY_COLUMNS} FROM omr_answer_keys WHERE user_id = ? ORDER BY created_at DESC;",
+            (user_id,),
         )
         return await cursor.fetchall()
 
 
-async def get_answer_key(answer_key_id: str) -> aiosqlite.Row | None:
+async def get_answer_key(answer_key_id: str, user_id: str) -> aiosqlite.Row | None:
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
-            f"SELECT {ANSWER_KEY_COLUMNS} FROM omr_answer_keys WHERE id = ?;",
-            (answer_key_id,),
+            f"SELECT {ANSWER_KEY_COLUMNS} FROM omr_answer_keys WHERE id = ? AND user_id = ?;",
+            (answer_key_id, user_id),
         )
         return await cursor.fetchone()
 
@@ -344,6 +376,7 @@ GRADED_RESULT_COLUMNS = """
 
 async def save_graded_result_record(
     result_id: str,
+    user_id: str,
     class_name: str,
     sheet_id: str,
     sheet_label: str,
@@ -366,9 +399,10 @@ async def save_graded_result_record(
         await conn.execute(
             f"""
             INSERT INTO omr_graded_results
-                ({GRADED_RESULT_COLUMNS})
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, user_id, {GRADED_RESULT_COLUMNS})
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(sheet_id, answer_key_id) DO UPDATE SET
+                user_id = excluded.user_id,
                 class_name = excluded.class_name,
                 sheet_label = excluded.sheet_label,
                 answer_key_name = excluded.answer_key_name,
@@ -383,7 +417,7 @@ async def save_graded_result_record(
                 saved_at = excluded.saved_at;
             """,
             (
-                result_id, class_name, sheet_id, sheet_label, answer_key_id, answer_key_name,
+                result_id, user_id, class_name, sheet_id, sheet_label, answer_key_id, answer_key_name,
                 sbd, made, correct_count, wrong_count, blank_count, ambiguous_count,
                 score_10, int(aligned), saved_at,
             ),
@@ -391,37 +425,39 @@ async def save_graded_result_record(
         await conn.commit()
 
 
-async def get_graded_result_by_sheet_and_key(sheet_id: str, answer_key_id: str) -> aiosqlite.Row | None:
+async def get_graded_result_by_sheet_and_key(sheet_id: str, answer_key_id: str, user_id: str) -> aiosqlite.Row | None:
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
             f"""
             SELECT {GRADED_RESULT_COLUMNS} FROM omr_graded_results
-            WHERE sheet_id = ? AND answer_key_id = ?;
+            WHERE sheet_id = ? AND answer_key_id = ? AND user_id = ?;
             """,
-            (sheet_id, answer_key_id),
+            (sheet_id, answer_key_id, user_id),
         )
         return await cursor.fetchone()
 
 
-async def list_graded_results() -> list[aiosqlite.Row]:
+async def list_graded_results(user_id: str) -> list[aiosqlite.Row]:
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
             f"""
             SELECT {GRADED_RESULT_COLUMNS} FROM omr_graded_results
+            WHERE user_id = ?
             ORDER BY class_name ASC, sbd ASC, saved_at DESC;
             """,
+            (user_id,),
         )
         return await cursor.fetchall()
 
 
-async def get_graded_result(result_id: str) -> aiosqlite.Row | None:
+async def get_graded_result(result_id: str, user_id: str) -> aiosqlite.Row | None:
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
-            f"SELECT {GRADED_RESULT_COLUMNS} FROM omr_graded_results WHERE id = ?;",
-            (result_id,),
+            f"SELECT {GRADED_RESULT_COLUMNS} FROM omr_graded_results WHERE id = ? AND user_id = ?;",
+            (result_id, user_id),
         )
         return await cursor.fetchone()
 

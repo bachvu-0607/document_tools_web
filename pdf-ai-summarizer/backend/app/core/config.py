@@ -31,6 +31,12 @@ class Settings:
 
     #db
     database_path: str = os.getenv("DATABASE_URL", "../data/database/app.sqlite3")
+
+    #auth
+    # Khoa bi mat dung de ky/kiem tra JWT - PHAI dat gia tri rieng, khac mac dinh
+    # nay khi len production (Railway), neu khong ai cung ky gia duoc token.
+    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "dev-only-change-me")
+    jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", str(60 * 24 * 7)))  # mac dinh 7 ngay
 # Tao object settings dung chung cho toan backend.
 settings = Settings()
 

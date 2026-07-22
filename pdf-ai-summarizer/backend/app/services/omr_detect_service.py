@@ -322,9 +322,9 @@ def _run_detection_core(
     return sbd, sbd_ambiguous, made, made_ambiguous, answers, ambiguous_questions, marks
 
 
-async def run_detection(template_id: str, sheet_id: str) -> OmrDetectionResponse:
-    template = await get_omr_template(template_id)
-    sheet_bytes, _ = await get_omr_sheet_file(sheet_id)
+async def run_detection(template_id: str, sheet_id: str, user_id: str) -> OmrDetectionResponse:
+    template = await get_omr_template(template_id, user_id)
+    sheet_bytes, _ = await get_omr_sheet_file(sheet_id, user_id)
     _, gray, was_aligned = _load_images(sheet_bytes)
 
     sbd, sbd_ambiguous, made, made_ambiguous, answers, ambiguous_questions, _ = _run_detection_core(template, gray)
@@ -332,6 +332,7 @@ async def run_detection(template_id: str, sheet_id: str) -> OmrDetectionResponse
     detected_at = datetime.datetime.now().isoformat()
     await save_detection_record(
         sheet_id=sheet_id,
+        user_id=user_id,
         template_id=template_id,
         sbd=sbd,
         sbd_ambiguous_digits=json.dumps(sbd_ambiguous),
@@ -357,8 +358,8 @@ async def run_detection(template_id: str, sheet_id: str) -> OmrDetectionResponse
     )
 
 
-async def get_saved_detection(sheet_id: str) -> OmrDetectionResponse:
-    row = await get_detection(sheet_id)
+async def get_saved_detection(sheet_id: str, user_id: str) -> OmrDetectionResponse:
+    row = await get_detection(sheet_id, user_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Detection not found")
     return OmrDetectionResponse(
@@ -375,24 +376,25 @@ async def get_saved_detection(sheet_id: str) -> OmrDetectionResponse:
     )
 
 
-async def get_or_run_detection(template_id: str, sheet_id: str) -> OmrDetectionResponse:
+async def get_or_run_detection(template_id: str, sheet_id: str, user_id: str) -> OmrDetectionResponse:
     # Dung lai ket qua detect da co san (ke ca ban da sua tay) thay vi chay lai
     # OpenCV moi lan - tranh viec cham hang loat vo tinh ghi de mat cho sua tay
     # cua nguoi dung. Muon doc lai tu dau thi goi thang run_detection().
-    row = await get_detection(sheet_id)
+    row = await get_detection(sheet_id, user_id)
     if row is not None:
-        return await get_saved_detection(sheet_id)
-    return await run_detection(template_id, sheet_id)
+        return await get_saved_detection(sheet_id, user_id)
+    return await run_detection(template_id, sheet_id, user_id)
 
 
 async def override_detection(
-    sheet_id: str, template_id: str, sbd: str, made: str, answers: list[str],
+    sheet_id: str, template_id: str, sbd: str, made: str, answers: list[str], user_id: str,
 ) -> OmrDetectionResponse:
     # Nguoi dung tu sua lai ket qua doc sau khi xem preview thay may doc sai -
     # coi nhu da xac nhan bang mat nen khong con o nao "khong chac" nua.
     detected_at = datetime.datetime.now().isoformat()
     await save_detection_record(
         sheet_id=sheet_id,
+        user_id=user_id,
         template_id=template_id,
         sbd=sbd,
         sbd_ambiguous_digits=json.dumps([]),
@@ -416,9 +418,9 @@ async def override_detection(
     )
 
 
-async def render_preview_image(template_id: str, sheet_id: str) -> bytes:
-    template = await get_omr_template(template_id)
-    sheet_bytes, _ = await get_omr_sheet_file(sheet_id)
+async def render_preview_image(template_id: str, sheet_id: str, user_id: str) -> bytes:
+    template = await get_omr_template(template_id, user_id)
+    sheet_bytes, _ = await get_omr_sheet_file(sheet_id, user_id)
     color, gray, _ = _load_images(sheet_bytes)
 
     _, _, _, _, _, _, marks = _run_detection_core(template, gray)
