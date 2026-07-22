@@ -1,7 +1,10 @@
 import datetime
+import io
 from uuid import uuid4
 
 from fastapi import HTTPException
+from openpyxl import Workbook
+from openpyxl.styles import Font
 
 from app.core.omr_database import (
     delete_graded_result_record,
@@ -84,3 +87,55 @@ async def delete_omr_graded_result(result_id: str, user_id: str) -> None:
     if await get_graded_result(result_id, user_id) is None:
         raise HTTPException(status_code=404, detail="Result not found")
     await delete_graded_result_record(result_id)
+
+
+EXCEL_HEADERS = [
+    "STT", "Lớp", "SBD", "Mã đề", "Tên phiếu", "Điểm",
+    "Đúng", "Sai", "Bỏ trống", "Không chắc", "Lưu lúc",
+]
+
+
+async def export_graded_results_excel(result_ids: list[str], user_id: str) -> bytes:
+    if not result_ids:
+        raise HTTPException(status_code=400, detail="Chua chon ket qua nao de xuat")
+
+    rows = []
+    for result_id in result_ids:
+        row = await get_graded_result(result_id, user_id)
+        if row is not None:
+            rows.append(row)
+    if not rows:
+        raise HTTPException(status_code=404, detail="Khong tim thay ket qua nao trong so da chon")
+
+    # Sap theo lop roi SBD cho de doi chieu, giong thu tu hien thi ngoai UI.
+    rows.sort(key=lambda r: (r["class_name"], r["sbd"]))
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Bang diem"
+    sheet.append(EXCEL_HEADERS)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+
+    for index, row in enumerate(rows, start=1):
+        sheet.append([
+            index,
+            row["class_name"],
+            row["sbd"],
+            row["made"],
+            row["sheet_label"],
+            row["score_10"],
+            row["correct_count"],
+            row["wrong_count"],
+            row["blank_count"],
+            row["ambiguous_count"],
+            row["saved_at"],
+        ])
+
+    for column_cells in sheet.columns:
+        max_length = max(len(str(cell.value)) for cell in column_cells if cell.value is not None)
+        sheet.column_dimensions[column_cells[0].column_letter].width = min(max(max_length + 2, 10), 40)
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()

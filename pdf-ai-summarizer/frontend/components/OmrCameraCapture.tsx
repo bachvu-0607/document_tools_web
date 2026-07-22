@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { checkOmrAlignment, uploadOmrSheet } from "@/lib/api";
+import type { OmrSheetResponse } from "@/types/omr";
 
 const CHECK_INTERVAL_MS = 1000;
 const PREVIEW_INTERVAL_MS = 120;
@@ -14,7 +15,7 @@ const STABLE_CHECKS_REQUIRED = 2;
 type Rotation = 0 | 90 | 180 | 270;
 
 type OmrCameraCaptureProps = {
-  onCaptured: () => void;
+  onCaptured: (sheet: OmrSheetResponse) => void;
 };
 
 // Ve 1 khung hinh tu <video> vao canvas, co xoay theo goc chi dinh - dung
@@ -219,7 +220,7 @@ export function OmrCameraCapture({ onCaptured }: OmrCameraCaptureProps) {
       const result = await uploadOmrSheet(file, "");
       setCapturedCount((prev) => prev + 1);
       setLastMessage(`Đã tự động chụp & tải lên: ${result.label}`);
-      onCaptured();
+      onCaptured(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chụp được nhưng tải lên thất bại");
     }

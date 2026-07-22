@@ -15,9 +15,12 @@ def _compare(correct_answers: list[str], detection_answers: list[str], ambiguous
         question_number = index + 1
         detected_answer = detection_answers[index] if index < len(detection_answers) else ""
 
-        if question_number in ambiguous_questions:
-            status = "ambiguous"
-        elif detected_answer == "":
+        # Diem tinh theo dap an THAT SU may doc duoc (best guess), khong con
+        # tu dong tru diem chi vi bi danh dau "khong chac" - neu best guess
+        # tinh co trung dap an chuan thi van tinh la dung, chi to mau canh bao
+        # rieng (is_ambiguous) de nguoi cham tu xem lai, khong am tham sai
+        # nhung cung khong am tham tru diem oan.
+        if detected_answer == "":
             status = "blank"
         elif detected_answer == correct_answer:
             status = "correct"
@@ -29,6 +32,7 @@ def _compare(correct_answers: list[str], detection_answers: list[str], ambiguous
             correct_answer=correct_answer,
             detected_answer=detected_answer,
             status=status,
+            is_ambiguous=question_number in ambiguous_questions,
         ))
     return questions
 
@@ -43,7 +47,7 @@ async def grade_sheet(answer_key: OmrAnswerKeyResponse, sheet_id: str, user_id: 
     correct_count = sum(1 for q in questions if q.status == "correct")
     wrong_count = sum(1 for q in questions if q.status == "wrong")
     blank_count = sum(1 for q in questions if q.status == "blank")
-    ambiguous_count = sum(1 for q in questions if q.status == "ambiguous")
+    ambiguous_count = sum(1 for q in questions if q.is_ambiguous)
     total = len(questions)
     score_10 = round(correct_count / total * 10, 2) if total > 0 else 0.0
 

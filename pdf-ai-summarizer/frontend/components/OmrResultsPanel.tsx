@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { deleteOmrGradedResult, listOmrGradedResults } from "@/lib/api";
+import { deleteOmrGradedResult, exportOmrResultsExcel, listOmrGradedResults } from "@/lib/api";
 import type { OmrGradedResultResponse } from "@/types/omr";
 
 export function OmrResultsPanel() {
@@ -14,6 +14,9 @@ export function OmrResultsPanel() {
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState("");
   const [deleteError, setDeleteError] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   async function refresh() {
     setLoading(true);
@@ -39,6 +42,7 @@ export function OmrResultsPanel() {
     setDeleteError("");
     try {
       await deleteOmrGradedResult(resultId);
+      setSelectedIds((prev) => prev.filter((id) => id !== resultId));
       await refresh();
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "Không xoá được kết quả");
@@ -62,6 +66,44 @@ export function OmrResultsPanel() {
     filtered.length > 0
       ? Math.round((filtered.reduce((sum, r) => sum + r.score_10, 0) / filtered.length) * 100) / 100
       : null;
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((r) => selectedIds.includes(r.id));
+
+  function toggleSelect(resultId: string) {
+    setSelectedIds((prev) =>
+      prev.includes(resultId) ? prev.filter((id) => id !== resultId) : [...prev, resultId],
+    );
+  }
+
+  function toggleSelectAllFiltered() {
+    if (allFilteredSelected) {
+      const filteredIds = new Set(filtered.map((r) => r.id));
+      setSelectedIds((prev) => prev.filter((id) => !filteredIds.has(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...filtered.map((r) => r.id)])));
+    }
+  }
+
+  async function handleExportExcel() {
+    if (selectedIds.length === 0) return;
+    setExporting(true);
+    setExportError("");
+    try {
+      const blob = await exportOmrResultsExcel(selectedIds);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "bang-diem.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : "Không xuất được Excel");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <Card>
@@ -90,22 +132,40 @@ export function OmrResultsPanel() {
           >
             Làm mới
           </Button>
+          <Button
+            className="!min-h-10 !px-3 !text-xs"
+            disabled={selectedIds.length === 0}
+            loading={exporting}
+            onClick={() => void handleExportExcel()}
+            type="button"
+          >
+            📥 Xuất Excel ({selectedIds.length})
+          </Button>
         </div>
 
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           {filtered.length} kết quả{averageScore !== null ? ` — điểm trung bình ${averageScore}` : ""}
+          {selectedIds.length > 0 ? ` — đã chọn ${selectedIds.length}` : ""}
         </p>
 
         {listError ? <p className="text-sm text-red-600 dark:text-red-400">{listError}</p> : null}
         {deleteError ? <p className="text-sm text-red-600 dark:text-red-400">{deleteError}</p> : null}
+        {exportError ? <p className="text-sm text-red-600 dark:text-red-400">{exportError}</p> : null}
 
         {filtered.length === 0 && !loading ? (
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Chưa có kết quả nào được lưu.</p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="bg-zinc-50 text-xs uppercase text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
                 <tr>
+                  <th className="px-3 py-2 font-medium">
+                    <input
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAllFiltered}
+                      type="checkbox"
+                    />
+                  </th>
                   <th className="px-3 py-2 font-medium">Lớp</th>
                   <th className="px-3 py-2 font-medium">SBD</th>
                   <th className="px-3 py-2 font-medium">Mã đề</th>
@@ -118,7 +178,19 @@ export function OmrResultsPanel() {
               </thead>
               <tbody>
                 {filtered.map((r) => (
-                  <tr className="border-t border-zinc-200 dark:border-zinc-800" key={r.id}>
+                  <tr
+                    className={`border-t border-zinc-200 dark:border-zinc-800 ${
+                      selectedIds.includes(r.id) ? "bg-indigo-500/5" : ""
+                    }`}
+                    key={r.id}
+                  >
+                    <td className="px-3 py-2">
+                      <input
+                        checked={selectedIds.includes(r.id)}
+                        onChange={() => toggleSelect(r.id)}
+                        type="checkbox"
+                      />
+                    </td>
                     <td className="px-3 py-2">{r.class_name}</td>
                     <td className="px-3 py-2">{r.sbd || "?"}</td>
                     <td className="px-3 py-2">{r.made || "?"}</td>

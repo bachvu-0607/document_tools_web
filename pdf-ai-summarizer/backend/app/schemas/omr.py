@@ -100,8 +100,12 @@ class OmrGradeQuestionResult(BaseModel):
     question: int
     correct_answer: str
     detected_answer: str
-    # "correct" | "wrong" | "blank" | "ambiguous"
+    # "correct" | "wrong" | "blank" - tinh dua tren dap an may doc duoc co
+    # khop dap an chuan hay khong, KHONG con tru diem chi vi bi "khong chac".
     status: str
+    # Co rieng, khong anh huong diem - chi de canh bao "cau nay to mo/to doi,
+    # nen xem lai bang mat" du status co the la correct hay wrong.
+    is_ambiguous: bool = False
 
 class OmrGradeSheetResult(BaseModel):
     sheet_id: str
@@ -149,3 +153,6 @@ class OmrGradedResultResponse(BaseModel):
     score_10: float
     aligned: bool
     saved_at: str
+
+class OmrResultsExportRequest(BaseModel):
+    result_ids: list[str]

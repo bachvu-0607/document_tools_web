@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { OmrAnswerGrid } from "@/components/OmrAnswerGrid";
+import { OmrCameraCapture } from "@/components/OmrCameraCapture";
 import { OmrDigitsEditor } from "@/components/OmrDigitsEditor";
 import {
   gradeOmrSheetsBatch,
@@ -50,6 +51,14 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
   const [savingFix, setSavingFix] = useState(false);
   const [previewCacheBust, setPreviewCacheBust] = useState(0);
 
+  async function refreshSheets() {
+    try {
+      setSheets(await listOmrSheets());
+    } catch {
+      // Loi tai danh sach khong chan duoc luong chinh, bo qua im lang.
+    }
+  }
+
   useEffect(() => {
     void (async () => {
       try {
@@ -72,6 +81,13 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
     setSelectedSheetIds((prev) =>
       prev.includes(sheetId) ? prev.filter((id) => id !== sheetId) : [...prev, sheetId],
     );
+  }
+
+  function handleCameraCaptured(sheet: OmrSheetResponse) {
+    // Chup xong tu dong them luon vao danh sach "can cham" - do dung tinh
+    // nang nay chinh la de bo qua buoc chuyen tab Upload -> chon file thu cong.
+    setSelectedSheetIds((prev) => (prev.includes(sheet.id) ? prev : [...prev, sheet.id]));
+    void refreshSheets();
   }
 
   async function handleGrade() {
@@ -205,6 +221,11 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
               value={className}
             />
           </label>
+        </div>
+
+        <div className="grid gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+          <p className="text-sm font-medium">Hoặc chụp trực tiếp bằng camera — tự thêm vào danh sách cần chấm bên dưới</p>
+          <OmrCameraCapture onCaptured={handleCameraCaptured} />
         </div>
 
         <div className="grid gap-2">
@@ -376,6 +397,7 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
               </div>
             ) : (
               <OmrAnswerGrid
+                ambiguousQuestions={activeResult.questions.filter((q) => q.is_ambiguous).map((q) => q.question)}
                 answers={activeResult.questions.map((q) => q.detected_answer)}
                 correctAnswers={activeResult.questions.map((q) => q.correct_answer)}
                 numChoices={numChoices}

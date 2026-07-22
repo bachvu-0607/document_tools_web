@@ -547,6 +547,20 @@ export async function deleteOmrGradedResult(resultId: string): Promise<void> {
   }
 }
 
+export async function exportOmrResultsExcel(resultIds: string[]): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/api/omr/results/export-excel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ result_ids: resultIds }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+
+  return response.blob();
+}
+
 export async function checkOmrAlignment(blob: Blob): Promise<boolean> {
   const formData = new FormData();
   formData.append("file", blob, "check.jpg");

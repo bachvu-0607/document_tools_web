@@ -75,7 +75,8 @@ export type OmrGradeQuestionResult = {
   question: number;
   correct_answer: string;
   detected_answer: string;
-  status: "correct" | "wrong" | "blank" | "ambiguous";
+  status: "correct" | "wrong" | "blank";
+  is_ambiguous: boolean;
 };
 
 export type OmrGradeSheetResult = {

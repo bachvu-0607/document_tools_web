@@ -11,6 +11,7 @@ from app.schemas.omr import (
     OmrGradeBatchResponse,
     OmrGradedResultResponse,
     OmrGradedResultSaveRequest,
+    OmrResultsExportRequest,
     OmrSheetResponse,
     OmrTemplateCreateRequest,
     OmrTemplateResponse,
@@ -32,6 +33,7 @@ from app.services.omr_detect_service import (
 from app.services.omr_grade_service import grade_sheets_batch
 from app.services.omr_results_service import (
     delete_omr_graded_result,
+    export_graded_results_excel,
     list_omr_graded_results,
     save_graded_results,
 )
@@ -204,3 +206,14 @@ async def delete_omr_result_endpoint(
 ) -> Response:
     await delete_omr_graded_result(result_id, current_user.id)
     return Response(status_code=204)
+
+@router.post("/omr/results/export-excel")
+async def export_omr_results_endpoint(
+    request: OmrResultsExportRequest, current_user: UserInfo = Depends(get_current_user),
+) -> Response:
+    excel_bytes = await export_graded_results_excel(request.result_ids, current_user.id)
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="bang-diem.xlsx"'},
+    )

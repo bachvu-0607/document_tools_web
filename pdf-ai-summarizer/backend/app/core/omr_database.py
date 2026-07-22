@@ -421,9 +421,11 @@ async def save_graded_result_record(
     # ban ghi trung, tranh so diem bi nhan doi trong bang.
     async with aiosqlite.connect(settings.database_path) as conn:
         await conn.execute(
-            f"""
+            """
             INSERT INTO omr_graded_results
-                (id, user_id, {GRADED_RESULT_COLUMNS})
+                (id, user_id, class_name, sheet_id, sheet_label, answer_key_id, answer_key_name,
+                 sbd, made, correct_count, wrong_count, blank_count, ambiguous_count,
+                 score_10, aligned, saved_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(sheet_id, answer_key_id) DO UPDATE SET
                 user_id = excluded.user_id,
