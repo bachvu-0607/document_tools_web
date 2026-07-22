@@ -35,6 +35,16 @@ MARKER_MATCH_MAX_DIST_RATIO = 0.035
 # RANSAC de bi nhieu, thua tin cay phep nan tho ban dau con hon.
 MIN_REFINE_MATCHES = 6
 
+# Bat/tat log chan doan tam thoi - in ra stdout (hien trong Railway Deploy
+# Logs) de xem chinh xac thuat toan dang thay gi tren anh that cua nguoi dung,
+# khong can ho gui file anh goc. TAT sau khi chan doan xong, tranh log rac.
+DEBUG_ALIGNMENT = True
+
+
+def _dbg(*args) -> None:
+    if DEBUG_ALIGNMENT:
+        print("[OMR-ALIGN-DEBUG]", *args, flush=True)
+
 
 # Anh sang/do phoi sang khac nhau giua cac lan chup khien 1 nguong co dinh
 # khong phai luc nao cung tach duoc dau goc den khoi nen - thu lan luot vai
@@ -51,21 +61,36 @@ def _find_marker_candidates(gray: np.ndarray, threshold: int | str) -> np.ndarra
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     candidates = []
+    rejected_by_area = 0
+    rejected_by_aspect = 0
+    rejected_by_solidity = 0
     for contour in contours:
         area = cv2.contourArea(contour)
         area_ratio = area / img_area
         if not (MIN_MARKER_AREA_RATIO <= area_ratio <= MAX_MARKER_AREA_RATIO):
+            if area_ratio > 0:
+                rejected_by_area += 1
             continue
         x, y, box_w, box_h = cv2.boundingRect(contour)
         if box_h == 0:
             continue
         aspect = box_w / box_h
         if not (MIN_ASPECT_RATIO <= aspect <= MAX_ASPECT_RATIO):
+            rejected_by_aspect += 1
             continue
         solidity = area / (box_w * box_h)
         if solidity < MIN_SOLIDITY:
+            rejected_by_solidity += 1
             continue
         candidates.append((x + box_w / 2, y + box_h / 2))
+
+    _dbg(
+        f"threshold={threshold}: {len(candidates)} ung vien hop le"
+        f" (loai vi sai/qua/thieu dien tich={rejected_by_area},"
+        f" sai ty le canh={rejected_by_aspect}, khong dac hinh vuong={rejected_by_solidity})",
+    )
+    for cx, cy in candidates:
+        _dbg(f"    ung vien tai ({cx:.0f}, {cy:.0f})")
 
     return np.array(candidates, dtype=np.float32)
 
@@ -76,6 +101,7 @@ def _pick_outer_corners(candidates: np.ndarray, img_w: int, img_h: int) -> np.nd
     # x+y nho nhat/lon nhat va hieu x-y nho nhat/lon nhat - vi moi diem noi bo
     # nam gan tam trang hon nhieu so voi 4 goc ngoai cung.
     if len(candidates) < 4:
+        _dbg(f"chi co {len(candidates)} ung vien (< 4), bo qua nguong nay")
         return None
 
     sums = candidates[:, 0] + candidates[:, 1]
@@ -87,12 +113,21 @@ def _pick_outer_corners(candidates: np.ndarray, img_w: int, img_h: int) -> np.nd
     bottom_left = candidates[np.argmin(diffs)]
 
     corners = np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32)
+    _dbg(
+        f"4 goc cuc bien chon duoc: TL=({top_left[0]:.0f},{top_left[1]:.0f})"
+        f" TR=({top_right[0]:.0f},{top_right[1]:.0f})"
+        f" BR=({bottom_right[0]:.0f},{bottom_right[1]:.0f})"
+        f" BL=({bottom_left[0]:.0f},{bottom_left[1]:.0f})"
+        f" | kich thuoc anh {img_w}x{img_h}",
+    )
+
     # 4 diem phai thuc su phan biet (khac o vuong bi trung/gan nhau do anh qua
     # it dau moc de chon) - neu 2 "goc" trung gan nhau thi coi nhu khong tim
     # duoc, tranh nan anh ra ket qua vo nghia.
     for i in range(4):
         for j in range(i + 1, 4):
             if np.linalg.norm(corners[i] - corners[j]) < 10:
+                _dbg("tu choi: 2 trong 4 goc qua gan nhau (trung diem)")
                 return None
 
     # Kiem tra hinh dang co hop ly khong (2 canh doi dien khong duoc lech qua
@@ -102,8 +137,10 @@ def _pick_outer_corners(candidates: np.ndarray, img_w: int, img_h: int) -> np.nd
     bottom_len = np.linalg.norm(bottom_right - bottom_left)
     left_len = np.linalg.norm(bottom_left - top_left)
     right_len = np.linalg.norm(bottom_right - top_right)
+    _dbg(f"do dai 4 canh: tren={top_len:.0f} duoi={bottom_len:.0f} trai={left_len:.0f} phai={right_len:.0f}")
     for a, b in ((top_len, bottom_len), (left_len, right_len)):
         if a <= 0 or b <= 0 or max(a, b) / min(a, b) > MAX_SIDE_RATIO:
+            _dbg(f"tu choi: 2 canh doi dien lech qua nhieu (ty le > {MAX_SIDE_RATIO})")
             return None
 
     # 4 goc phai trai gan het khung anh, khong chi la 1 hinh chu nhat nho lot
@@ -113,9 +150,12 @@ def _pick_outer_corners(candidates: np.ndarray, img_w: int, img_h: int) -> np.nd
     ys = corners[:, 1]
     width_ratio = (xs.max() - xs.min()) / img_w
     height_ratio = (ys.max() - ys.min()) / img_h
+    _dbg(f"ty le bao phu khung anh: rong={width_ratio:.2f} cao={height_ratio:.2f} (can >= {MIN_COVERAGE_RATIO})")
     if width_ratio < MIN_COVERAGE_RATIO or height_ratio < MIN_COVERAGE_RATIO:
+        _dbg("tu choi: 4 goc khong bao phu du khung anh")
         return None
 
+    _dbg("CHAP NHAN 4 goc nay")
     return corners
 
 
@@ -148,15 +188,18 @@ def align_image(color: np.ndarray) -> tuple[np.ndarray, bool]:
     # DUNG BIET de ho tu doi/chinh lai anh neu can, khong am tham sai.
     gray = cv2.cvtColor(color, cv2.COLOR_BGR2GRAY)
     img_h, img_w = gray.shape[:2]
+    _dbg(f"===== align_image() bat dau, anh goc {img_w}x{img_h} =====")
 
     corners = None
     for threshold in THRESHOLD_ATTEMPTS:
         candidates = _find_marker_candidates(gray, threshold)
         corners = _pick_outer_corners(candidates, img_w, img_h)
         if corners is not None:
+            _dbg(f"thanh cong o nguong={threshold}")
             break
 
     if corners is None:
+        _dbg("THAT BAI: khong nguong nao tim duoc 4 goc hop le -> aligned=False")
         return color, False
 
     top_left, top_right, bottom_right, bottom_left = corners
@@ -169,6 +212,7 @@ def align_image(color: np.ndarray) -> tuple[np.ndarray, bool]:
         np.linalg.norm(bottom_right - top_right),
     ))
     if target_w < 10 or target_h < 10:
+        _dbg("THAT BAI: kich thuoc nan ra qua nho")
         return color, False
 
     dst = np.array(
@@ -177,6 +221,7 @@ def align_image(color: np.ndarray) -> tuple[np.ndarray, bool]:
     )
     matrix = cv2.getPerspectiveTransform(corners, dst)
     warped = cv2.warpPerspective(color, matrix, (target_w, target_h))
+    _dbg(f"THANH CONG: anh nan ra co kich thuoc {target_w}x{target_h}")
     return warped, True
 
 
@@ -198,6 +243,7 @@ def detect_all_markers_normalized(color: np.ndarray) -> list[tuple[float, float]
 def _refine_with_markers(rough_warped: np.ndarray, template_markers: list[tuple[float, float]]) -> np.ndarray | None:
     gray = cv2.cvtColor(rough_warped, cv2.COLOR_BGR2GRAY)
     img_h, img_w = gray.shape[:2]
+    _dbg(f"--- _refine_with_markers(): {len(template_markers)} dau moc trong ban do mau ---")
 
     detected = np.array([], dtype=np.float32).reshape(0, 2)
     for threshold in THRESHOLD_ATTEMPTS:
@@ -206,6 +252,7 @@ def _refine_with_markers(rough_warped: np.ndarray, template_markers: list[tuple[
             detected = candidates
             break
     if len(detected) == 0:
+        _dbg("khong tim duoc dau moc nao tren anh da nan tho, bo qua tinh chinh")
         return None
 
     max_dist = MARKER_MATCH_MAX_DIST_RATIO * max(img_w, img_h)
@@ -219,6 +266,7 @@ def _refine_with_markers(rough_warped: np.ndarray, template_markers: list[tuple[
             matched_detected.append(detected[best_idx])
             matched_expected.append(expected)
 
+    _dbg(f"khop duoc {len(matched_detected)}/{len(template_markers)} dau moc (can >= {MIN_REFINE_MATCHES})")
     if len(matched_detected) < MIN_REFINE_MATCHES:
         return None
 
@@ -226,8 +274,10 @@ def _refine_with_markers(rough_warped: np.ndarray, template_markers: list[tuple[
     dst = np.array(matched_expected, dtype=np.float32)
     homography, _ = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
     if homography is None:
+        _dbg("findHomography that bai")
         return None
 
+    _dbg("tinh chinh THANH CONG")
     return cv2.warpPerspective(rough_warped, homography, (img_w, img_h))
 
 
@@ -247,6 +297,7 @@ def align_image_with_template(
     if not was_aligned:
         return color, False
     if not template_markers:
+        _dbg("mau chua co ban do dau moc, dung nguyen ban nan tho")
         return rough, True
 
     refined = _refine_with_markers(rough, template_markers)
