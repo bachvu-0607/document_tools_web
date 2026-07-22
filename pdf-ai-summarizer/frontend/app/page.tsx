@@ -367,7 +367,7 @@ function HomePageContent({ user, onLogout }: HomePageContentProps) {
                     onClick={onLogout}
                     type="button"
                   >
-                    Đăng xuất
+                    Sign out
                   </button>
                 </div>
               </div>
