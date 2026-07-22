@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Response
 from pathlib import Path
+from urllib.parse import quote
 from app.core.database import get_latest_summary
 from app.schemas.summary import SummaryRequest, SummaryResponse, PdfExportRequest
 from app.services.summary_service import create_summary
@@ -18,10 +19,20 @@ async def send_pdf_export_request(request: PdfExportRequest) -> Response:
 
     pdf_bytes = create_summary_pdf(record["document_name"], record["summary_text"])
     safe_name = Path(record["document_name"]).stem
+    output_filename = f"{safe_name}-tom-tat.pdf"
+    # Header HTTP chi cho phep ky tu Latin-1 - ten file co dau tieng Viet (vd "Đa
+    # luồng") lam vo header neu dat truc tiep vao filename=. Dung ca 2 dang:
+    # ascii_fallback (filename=, trinh duyet cu doc duoc nhung mat dau) va
+    # filename*=UTF-8'' (RFC 5987, trinh duyet hien dai uu tien dung, giu nguyen dau).
+    ascii_fallback = output_filename.encode("ascii", "ignore").decode("ascii") or "tom-tat.pdf"
+    encoded_filename = quote(output_filename)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{safe_name}-tom-tat.pdf"'
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_fallback}"; '
+                f"filename*=UTF-8''{encoded_filename}"
+            )
         },
     )
