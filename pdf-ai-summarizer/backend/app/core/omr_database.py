@@ -100,6 +100,15 @@ async def init_omr_db() -> None:
             await conn.execute("ALTER TABLE omr_detections ADD COLUMN aligned INTEGER NOT NULL DEFAULT 1;")
         except aiosqlite.OperationalError:
             pass  # cot da ton tai roi, bo qua
+        try:
+            # Ban do toan bo dau moc (o vuong den) do duoc tren anh mau luc tao
+            # template - dung de nan tinh chinh chinh xac hon cho tung anh
+            # phieu hoc sinh sau nay (xem omr_align_service.align_image_with_template).
+            # NULL/rong voi template tao truoc khi co tinh nang nay - se tu
+            # dong dung lai cach nan tho 4 goc cu, khong bi hong.
+            await conn.execute("ALTER TABLE omr_templates ADD COLUMN marker_layout TEXT;")
+        except aiosqlite.OperationalError:
+            pass  # cot da ton tai roi, bo qua
         await conn.commit()
 
 
@@ -225,21 +234,36 @@ async def save_template_record(
     answer_blocks: str,
     num_choices: int,
     created_at: str,
+    marker_layout: str = "",
 ) -> None:
     async with aiosqlite.connect(settings.database_path) as conn:
         await conn.execute(
             """
             INSERT INTO omr_templates
                 (id, user_id, name, reference_sheet_id, sbd_zone, sbd_digits, made_zone,
-                 made_digits, answer_blocks, num_choices, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                 made_digits, answer_blocks, num_choices, created_at, marker_layout)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 template_id, user_id, name, reference_sheet_id, sbd_zone, sbd_digits,
-                made_zone, made_digits, answer_blocks, num_choices, created_at,
+                made_zone, made_digits, answer_blocks, num_choices, created_at, marker_layout,
             ),
         )
         await conn.commit()
+
+
+async def get_template_marker_layout(template_id: str) -> str | None:
+    # Ham rieng, nhe, chi lay dung cot marker_layout - dung noi bo trong luc
+    # detect/preview, KHONG di qua TEMPLATE_COLUMNS/OmrTemplateResponse vi day
+    # la chi tiet ky thuat noi bo, khong can lo ra API cong khai.
+    async with aiosqlite.connect(settings.database_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            "SELECT marker_layout FROM omr_templates WHERE id = ?;",
+            (template_id,),
+        )
+        row = await cursor.fetchone()
+        return row["marker_layout"] if row is not None else None
 
 
 async def list_templates() -> list[aiosqlite.Row]:

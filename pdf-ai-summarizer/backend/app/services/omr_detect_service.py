@@ -6,9 +6,9 @@ import cv2
 import numpy as np
 from fastapi import HTTPException
 
-from app.core.omr_database import get_detection, save_detection_record
+from app.core.omr_database import get_detection, get_template_marker_layout, save_detection_record
 from app.schemas.omr import AnswerBlock, OmrDetectionResponse, OmrTemplateResponse, ZoneRect
-from app.services.omr_align_service import align_image
+from app.services.omr_align_service import align_image_with_template
 from app.services.omr_storage import get_omr_sheet_file
 from app.services.omr_template_service import get_omr_template
 
@@ -35,16 +35,21 @@ class CellMark:
     ambiguous: bool
 
 
-def _load_images(sheet_bytes: bytes) -> tuple[np.ndarray, np.ndarray, bool]:
+async def _load_images(sheet_bytes: bytes, template_id: str) -> tuple[np.ndarray, np.ndarray, bool]:
     array = np.frombuffer(sheet_bytes, dtype=np.uint8)
     color = cv2.imdecode(array, cv2.IMREAD_COLOR)
     if color is None:
         raise HTTPException(status_code=400, detail="Khong doc duoc anh phieu")
-    # Nan thang theo 4 dau goc den TRUOC khi doc luoi - phai dung chinh xac
-    # cach xu ly nay o day va o buoc hien thi anh cho man hinh khoanh vung mau
-    # (omr_storage.get_omr_sheet_aligned_bytes), de 2 ben luon chung 1 he toa
-    # do %, khong bi lech nhau.
-    aligned, was_aligned = align_image(color)
+    # Nan thang theo 4 dau goc den TRUOC khi doc luoi. Neu mau phieu nay da co
+    # san "ban do dau moc" (chup luc tao mau - xem omr_template_service), tinh
+    # chinh them 1 buoc qua toan bo dau moc thay vi chi 4 goc, chinh xac hon
+    # nhieu voi anh chup nghieng/bi che 1 phan. Luu y: buoc hien thi anh cho
+    # man hinh khoanh vung mau (omr_storage.get_omr_sheet_aligned_bytes) VAN
+    # dung ban nan tho (chua co template luc do) - 2 he toa do % chi khop nhau
+    # khi mau CHUA duoc tinh chinh them, dung nhu truoc gio.
+    marker_layout_json = await get_template_marker_layout(template_id)
+    template_markers = json.loads(marker_layout_json) if marker_layout_json else None
+    aligned, was_aligned = align_image_with_template(color, template_markers)
     gray = cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY)
     return aligned, gray, was_aligned
 
@@ -325,7 +330,7 @@ def _run_detection_core(
 async def run_detection(template_id: str, sheet_id: str, user_id: str) -> OmrDetectionResponse:
     template = await get_omr_template(template_id, user_id)
     sheet_bytes, _ = await get_omr_sheet_file(sheet_id, user_id)
-    _, gray, was_aligned = _load_images(sheet_bytes)
+    _, gray, was_aligned = await _load_images(sheet_bytes, template_id)
 
     sbd, sbd_ambiguous, made, made_ambiguous, answers, ambiguous_questions, _ = _run_detection_core(template, gray)
 
@@ -421,7 +426,7 @@ async def override_detection(
 async def render_preview_image(template_id: str, sheet_id: str, user_id: str) -> bytes:
     template = await get_omr_template(template_id, user_id)
     sheet_bytes, _ = await get_omr_sheet_file(sheet_id, user_id)
-    color, gray, _ = _load_images(sheet_bytes)
+    color, gray, _ = await _load_images(sheet_bytes, template_id)
 
     _, _, _, _, _, _, marks = _run_detection_core(template, gray)
 

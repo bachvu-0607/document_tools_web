@@ -2,6 +2,8 @@ import datetime
 import json
 from uuid import uuid4
 
+import cv2
+import numpy as np
 from fastapi import HTTPException
 
 from app.core.omr_database import (
@@ -13,6 +15,8 @@ from app.core.omr_database import (
     save_template_record,
 )
 from app.schemas.omr import AnswerBlock, OmrTemplateCreateRequest, OmrTemplateResponse, ZoneRect
+from app.services.omr_align_service import align_image, detect_all_markers_normalized
+from app.services.omr_storage import get_omr_sheet_file
 
 MAX_ANSWER_BLOCKS = 3
 
@@ -55,6 +59,26 @@ def _row_to_response(row, user_id: str) -> OmrTemplateResponse:
     )
 
 
+async def _capture_marker_layout(sheet_id: str, user_id: str) -> str:
+    # Chup lai "ban do" toan bo dau moc (o vuong den) tren anh mau, luu theo
+    # toa do % - dung sau nay de nan tinh chinh cho tung anh phieu hoc sinh
+    # (xem align_image_with_template). That bai o day KHONG chan viec tao mau
+    # (tra ve rong "[]"), chi la mau do se tu dong dung lai cach nan tho 4 goc
+    # cu thay vi duoc tinh chinh - khong nghiem trong bang loi tao mau.
+    try:
+        file_bytes, _ = await get_omr_sheet_file(sheet_id, user_id)
+        array = np.frombuffer(file_bytes, dtype=np.uint8)
+        color = cv2.imdecode(array, cv2.IMREAD_COLOR)
+        if color is None:
+            return json.dumps([])
+        aligned, was_aligned = align_image(color)
+        if not was_aligned:
+            return json.dumps([])
+        return json.dumps(detect_all_markers_normalized(aligned))
+    except Exception:
+        return json.dumps([])
+
+
 async def create_omr_template(request: OmrTemplateCreateRequest, user_id: str) -> OmrTemplateResponse:
     # Van bat buoc anh mau phai la anh CUA CHINH MINH thi moi tao template
     # duoc (get_sheet loc nghiem theo user_id) - dung chung chi ap dung SAU
@@ -75,6 +99,7 @@ async def create_omr_template(request: OmrTemplateCreateRequest, user_id: str) -
 
     template_id = str(uuid4())
     created_at = datetime.datetime.now().isoformat()
+    marker_layout = await _capture_marker_layout(request.reference_sheet_id, user_id)
 
     await save_template_record(
         template_id=template_id,
@@ -88,6 +113,7 @@ async def create_omr_template(request: OmrTemplateCreateRequest, user_id: str) -
         answer_blocks=json.dumps([block.model_dump() for block in request.answer_blocks]),
         num_choices=request.num_choices,
         created_at=created_at,
+        marker_layout=marker_layout,
     )
 
     row = await get_template(template_id)
