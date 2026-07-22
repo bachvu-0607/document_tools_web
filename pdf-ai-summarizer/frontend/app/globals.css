@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgb(99 102 241 / 0.10), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgb(16 185 129 / 0.06), transparent);
+  background-attachment: fixed;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background-image:
+      radial-gradient(ellipse 80% 50% at 20% -10%, rgb(99 102 241 / 0.16), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, rgb(16 185 129 / 0.10), transparent);
+  }
+}
+
+::selection {
+  background-color: rgb(79 70 229 / 0.25);
+}
+
+textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+textarea::-webkit-scrollbar-thumb {
+  background-color: rgb(161 161 170 / 0.6);
+  border-radius: 9999px;
+}

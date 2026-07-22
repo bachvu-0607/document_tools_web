@@ -1,0 +1,3 @@
+# Cho phep package sharp chay build script khi cai dependencies cho Next.js.
+allowBuilds:
+  sharp: true

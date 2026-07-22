@@ -1,0 +1,24 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/pdf-ai-summarizer/backend/.venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/pdf-ai-summarizer/backend"
+  ],
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/__init__.py": true,
+    "**/.gitkeep": true,
+    "**/.next": true,
+    "**/.venv": true,
+    "**/node_modules": true,
+    "**/tsconfig.tsbuildinfo": true,
+    "**/.pnpm-store": true,
+    "**/next-env.d.ts": true,
+    "**/next.config.mjs": true,
+    "**/postcss.config.mjs": true,
+    "**/tailwind.config.ts": true,
+    "**/pnpm-lock.yaml": true,
+    "**/pnpm-workspace.yaml": true
+  }
+}

@@ -1,0 +1,34 @@
+.DS_Store
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# Local application data
+data/uploads/*
+!data/uploads/.gitkeep
+data/outputs/*
+!data/outputs/.gitkeep
+data/database/*
+!data/database/.gitkeep
+data/omr_uploads/*
+!data/omr_uploads/.gitkeep
+
+# Logs
+*.log

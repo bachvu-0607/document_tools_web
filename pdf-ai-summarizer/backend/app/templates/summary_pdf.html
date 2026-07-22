@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<style>
+  @page {
+    size: A4;
+    margin: 2.2cm 2cm;
+    @bottom-center {
+      content: "Trang " counter(page) " / " counter(pages);
+      font-size: 9px;
+      color: #9ca3af;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    color: #27272a;
+    font-size: 11pt;
+    line-height: 1.6;
+  }
+
+  .eyebrow {
+    font-size: 9pt;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #4f46e5;
+    margin: 0;
+  }
+
+  h1.doc-title {
+    font-size: 20pt;
+    font-weight: 700;
+    margin: 6px 0 4px 0;
+    color: #18181b;
+  }
+
+  .meta {
+    font-size: 9.5pt;
+    color: #71717a;
+    margin: 0 0 18px 0;
+  }
+
+  .divider {
+    border: none;
+    border-top: 2px solid #4f46e5;
+    margin: 0 0 22px 0;
+  }
+
+  .summary-body h2 {
+    font-size: 14pt;
+    font-weight: 700;
+    color: #18181b;
+    margin: 20px 0 8px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #e4e4e7;
+  }
+
+  .summary-body h2:first-child {
+    margin-top: 0;
+  }
+
+  .summary-body h3 {
+    font-size: 12pt;
+    font-weight: 700;
+    color: #27272a;
+    margin: 14px 0 6px 0;
+  }
+
+  .summary-body p {
+    margin: 0 0 10px 0;
+    text-align: justify;
+  }
+
+  .summary-body ul,
+  .summary-body ol {
+    margin: 0 0 10px 0;
+    padding-left: 20px;
+  }
+
+  .summary-body li {
+    margin-bottom: 4px;
+  }
+
+  .summary-body strong {
+    color: #18181b;
+  }
+
+  .summary-body code {
+    font-family: "SFMono-Regular", Consolas, Menlo, monospace;
+    font-size: 9.5pt;
+    background: #f4f4f5;
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .summary-body pre {
+    background: #f4f4f5;
+    border: 1px solid #e4e4e7;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 9.5pt;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+  }
+
+  .summary-body pre code {
+    background: none;
+    padding: 0;
+  }
+
+  .summary-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 14px 0;
+    font-size: 10pt;
+  }
+
+  .summary-body th,
+  .summary-body td {
+    border: 1px solid #e4e4e7;
+    padding: 6px 8px;
+    text-align: left;
+  }
+
+  .summary-body th {
+    background: #f4f4f5;
+    font-weight: 700;
+  }
+
+  .summary-body blockquote {
+    margin: 0 0 10px 0;
+    padding-left: 12px;
+    border-left: 3px solid #c7d2fe;
+    color: #52525b;
+  }
+</style>
+</head>
+<body>
+  <p class="eyebrow">PDF AI Summarizer &middot; Ban tom tat tu dong</p>
+  <h1 class="doc-title">{{ document_name }}</h1>
+  <p class="meta">Tao luc {{ generated_at }}</p>
+  <hr class="divider" />
+
+  <div class="summary-body">
+    {{ summary_html | safe }}
+  </div>
+</body>
+</html>
