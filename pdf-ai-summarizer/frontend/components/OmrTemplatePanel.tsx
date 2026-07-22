@@ -383,15 +383,19 @@ export function OmrTemplatePanel({ initialReferenceSheetId }: OmrTemplatePanelPr
                     <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
                       {totalQuestions} câu ({template.answer_blocks.length} khối) x {template.num_choices} lựa chọn
                     </p>
-                    <Button
-                      className="!min-h-8 !border-red-300 !px-2 !text-xs !text-red-600 hover:!bg-red-50 dark:!border-red-800 dark:!text-red-400 dark:hover:!bg-red-950"
-                      loading={deletingTemplateId === template.id}
-                      onClick={() => void handleDeleteTemplate(template.id)}
-                      type="button"
-                      variant="secondary"
-                    >
-                      Xoá
-                    </Button>
+                    {template.is_owner ? (
+                      <Button
+                        className="!min-h-8 !border-red-300 !px-2 !text-xs !text-red-600 hover:!bg-red-50 dark:!border-red-800 dark:!text-red-400 dark:hover:!bg-red-950"
+                        loading={deletingTemplateId === template.id}
+                        onClick={() => void handleDeleteTemplate(template.id)}
+                        type="button"
+                        variant="secondary"
+                      >
+                        Xoá
+                      </Button>
+                    ) : (
+                      <p className="text-[11px] italic text-zinc-400 dark:text-zinc-500">Dùng chung — không phải mẫu của bạn</p>
+                    )}
                   </div>
                 );
               })}

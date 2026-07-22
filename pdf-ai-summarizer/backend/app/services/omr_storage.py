@@ -11,6 +11,7 @@ from app.core.omr_database import (
     delete_sheet_record,
     find_sheet_usages,
     get_sheet,
+    get_sheet_viewable,
     list_sheets,
     save_sheet_record,
 )
@@ -82,7 +83,9 @@ async def list_omr_sheets(user_id: str) -> list[OmrSheetResponse]:
 
 
 async def get_omr_sheet_file(sheet_id: str, user_id: str) -> tuple[bytes, str]:
-    row = await get_sheet(sheet_id, user_id)
+    # Dung get_sheet_viewable (khong phai get_sheet) - cho phep xem anh cua
+    # nguoi khac NEU anh do dang la anh mau cua 1 template dung chung.
+    row = await get_sheet_viewable(sheet_id, user_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Sheet not found")
 

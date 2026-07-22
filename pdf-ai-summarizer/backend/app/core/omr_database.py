@@ -153,6 +153,29 @@ async def get_sheet(sheet_id: str, user_id: str) -> aiosqlite.Row | None:
         return await cursor.fetchone()
 
 
+async def get_sheet_viewable(sheet_id: str, user_id: str) -> aiosqlite.Row | None:
+    # Ban "long tay" hon get_sheet - dung cho 2 endpoint XEM anh (file/aligned),
+    # khong dung cho xoa/liet ke. Anh phieu van rieng tu MAC DINH, nhung neu
+    # anh do dang la anh mau cua it nhat 1 template (template dung CHUNG cho
+    # ca nhom) thi ai cung xem duoc anh do - vi day la anh phieu trang, khong
+    # co thong tin hoc sinh nao, va can hien thi thumbnail o man hinh Mau phieu
+    # cho moi nguoi trong nhom.
+    async with aiosqlite.connect(settings.database_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute(
+            """
+            SELECT id, label, original_filename, stored_filename, content_type, uploaded_at
+            FROM omr_sheets
+            WHERE id = ? AND (
+                user_id = ?
+                OR id IN (SELECT reference_sheet_id FROM omr_templates)
+            );
+            """,
+            (sheet_id, user_id),
+        )
+        return await cursor.fetchone()
+
+
 async def find_sheet_usages(sheet_id: str) -> tuple[list[str], list[str]]:
     # Truoc khi xoa 1 phieu, can biet no co dang lam anh mau cho template nao
     # hoac lam nguon cho dap an nao khong - xoa mat anh goc trong khi template/
@@ -185,7 +208,7 @@ async def delete_sheet_record(sheet_id: str) -> None:
 
 
 TEMPLATE_COLUMNS = """
-    id, name, reference_sheet_id, sbd_zone, sbd_digits, made_zone, made_digits,
+    id, user_id, name, reference_sheet_id, sbd_zone, sbd_digits, made_zone, made_digits,
     answer_blocks, num_choices, created_at
 """
 
@@ -219,22 +242,23 @@ async def save_template_record(
         await conn.commit()
 
 
-async def list_templates(user_id: str) -> list[aiosqlite.Row]:
+async def list_templates() -> list[aiosqlite.Row]:
+    # Mau phieu DUNG CHUNG cho ca nhom (khong loc theo user_id) - toa do khoanh
+    # vung khong co thong tin nhay cam, ai cung xem/dung duoc de cham bai.
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
-            f"SELECT {TEMPLATE_COLUMNS} FROM omr_templates WHERE user_id = ? ORDER BY created_at DESC;",
-            (user_id,),
+            f"SELECT {TEMPLATE_COLUMNS} FROM omr_templates ORDER BY created_at DESC;",
         )
         return await cursor.fetchall()
 
 
-async def get_template(template_id: str, user_id: str) -> aiosqlite.Row | None:
+async def get_template(template_id: str) -> aiosqlite.Row | None:
     async with aiosqlite.connect(settings.database_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute(
-            f"SELECT {TEMPLATE_COLUMNS} FROM omr_templates WHERE id = ? AND user_id = ?;",
-            (template_id, user_id),
+            f"SELECT {TEMPLATE_COLUMNS} FROM omr_templates WHERE id = ?;",
+            (template_id,),
         )
         return await cursor.fetchone()
 

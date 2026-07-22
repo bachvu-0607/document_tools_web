@@ -48,6 +48,10 @@ class OmrTemplateResponse(BaseModel):
     answer_blocks: list[AnswerBlock]
     num_choices: int
     created_at: str
+    # Mau phieu dung chung ca nhom (ai cung xem/dung duoc) - nhung chi nguoi
+    # tao (is_owner=True voi ho) moi sua/xoa duoc, tranh nguoi khac lo tay xoa
+    # mat mau ca nhom dang dung.
+    is_owner: bool
 
 class OmrDetectionResponse(BaseModel):
     sheet_id: str

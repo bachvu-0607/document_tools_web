@@ -33,6 +33,9 @@ export type OmrTemplateCreateRequest = {
 export type OmrTemplateResponse = OmrTemplateCreateRequest & {
   id: string;
   created_at: string;
+  // Mau phieu dung chung ca nhom - is_owner=true chi voi dung nguoi da tao ra
+  // no, dung de an/hien nut Xoa (chi chu moi xoa duoc).
+  is_owner: boolean;
 };
 
 export type OmrDetectionResponse = {
