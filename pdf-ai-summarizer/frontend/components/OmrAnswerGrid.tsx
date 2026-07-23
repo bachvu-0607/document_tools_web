@@ -54,13 +54,18 @@ export function OmrAnswerGrid({
         const questionNumber = index + 1;
         const isAmbiguous = ambiguousQuestions.includes(questionNumber);
 
+        // Che do "cham diem" (co correctAnswers) LUON to xanh/do theo dung/sai
+        // thuc te, khong bao gio de vang de len - vang che mat thong tin dung
+        // hay sai (nguoi xem se khong biet dap an that la gi). Vang ("khong
+        // chac") chi con y nghia o che do "doc thu" (Tao dap an - chua co dap
+        // an chuan de so sanh, chi bao "doc duoc nhung khong chac").
         let colorClass = BLANK_STYLE;
-        if (isAmbiguous) {
-          colorClass = "border-amber-500 bg-amber-500/15";
-        } else if (correctAnswers) {
+        if (correctAnswers) {
           if (answer === "") colorClass = BLANK_STYLE;
           else if (answer === correctAnswers[index]) colorClass = "border-emerald-500 bg-emerald-500/15";
           else colorClass = "border-red-500 bg-red-500/15";
+        } else if (isAmbiguous) {
+          colorClass = "border-amber-500 bg-amber-500/15";
         } else if (answer !== "") {
           colorClass = "border-sky-500 bg-sky-500/10";
         }

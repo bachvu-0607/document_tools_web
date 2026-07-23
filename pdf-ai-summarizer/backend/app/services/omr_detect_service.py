@@ -12,41 +12,65 @@ from app.services.omr_align_service import align_image_with_template, decode_ima
 from app.services.omr_storage import get_omr_sheet_file
 from app.services.omr_template_service import get_omr_template
 
-# Ty le "toi" toi thieu trong 1 o de coi la CHAC CHAN da to (tren nguong nay
-# moi khong bi danh dau "khong chac"). KHONG dung de quyet dinh bo trong -
-# hoc sinh lam bai trac nghiem gan nhu luon to 1 dap an, nen mien co chenh
-# lech NAO do giua 4 o (xem NEAR_ZERO_SIGNAL ben duoi) van nen doan dap an
-# kha di nhat + danh dau khong chac, con hon bo trong that su khong giup ich
-# gi cho nguoi xem lai.
-# 0.14 (thay vi 0.18 truoc do) - cung ly do voi AMBIGUOUS_MARGIN ben duoi:
-# o do phan giai Continuity Camera (~1440x1920), nhieu cau CHAC CHAN DUNG chi
-# dat do dam sau khi tru nen ~0.16-0.18, bi chan oan boi nguong 0.18 cu du
-# khoang cach voi o thu nhi da du rong. Ap dung cho MOI anh, khong rieng
-# Continuity Camera.
-MIN_FILL_RATIO = 0.14
-# Neu o co ty le "toi" cao nhi nhi va cao nhi la gan bang nhau (chenh lech duoi
-# muc nay), coi la to mo/to doi - khong doan bua, danh dau de nguoi xem lai.
-# 0.12 (thay vi 0.15 truoc do) - Continuity Camera (iPhone lam webcam cho Mac
-# qua web) bi macOS gioi han cung o ~1440x1920px (trang webcam goi video, KHONG
-# phai do phan giai chup anh that cua iPhone - kiem chung qua so lieu thuc te:
-# cac o chac chan dung o do phan giai nay thuong chi cach nhau ~0.13-0.14, bi
-# nguong 0.15 cu gan co "khong chac" oan). Danh doi: giam nhe do an toan chong
-# doc nham o MOI do phan giai (ke ca anh net), doi lai bot canh bao gia o
-# anh chup qua Continuity Camera.
-AMBIGUOUS_MARGIN = 0.12
+# === NGUONG THICH UNG (thay cho hang so co dinh) ===
+# Van de cua hang so co dinh: "tran tin hieu" (do dam toi da 1 o TO THAT co
+# the dat duoc, sau khi tru nen) khac nhau rat nhieu giua cac anh - anh sach
+# co the dat 0.7-0.9, anh bi loa sang/anh sang khong deu chi dat 0.2-0.3 (dan
+# du lieu that: 1 cau to that 2 dap an B=0.57 D=0.60 nhung tru nen xong chi
+# con ~0.25/0.28). 1 hang so co dinh khong the dung dung cho ca hai.
+#
+# Thay vao do: DO tran tin hieu THAT cua tung KHOI (SBD/Ma de/moi khoi dap
+# an) bang percentile cao cua cac o "thang cuoc" trong khoi do, roi cac
+# nguong deu tinh theo % CUA TRAN DO - xem _adaptive_thresholds().
+#
+# Rieng biet, can them 1 "san chong nhieu" tuyet doi theo DO PHAN GIAI (ban
+# kinh o tinh bang pixel) - khong phu thuoc anh sang/toi: o cang nhieu pixel
+# lay mau thi sai so ngau nhien cang nho (thong ke: sai so ti le 1/can(so
+# pixel)). Neu khong co san nay, 1 khoi ca on la MO (ca o dung cung yeu) se co
+# tran tin hieu tu no cung thap, keo nguong %-theo-tran tut xuong duoi muc
+# nhieu that - tai dien dung bug "bao to-nhieu-dap-an tran lan" o luoi SBD 10
+# ung vien da tung gap.
+#
+# Nguong cuoi = lon hon giua (theo %-tran, theo san-nhieu-do-phan-giai).
+CEILING_PERCENTILE = 85
+MIN_FILL_FRACTION = 0.40
+AMBIGUOUS_MARGIN_FRACTION = 0.35
+MULTI_MARK_FRACTION = 0.70
+# San tuyet doi toi thieu cho tran tin hieu - tranh chia % cho so gan 0 neu
+# ca khoi khong co dau hieu gi (VD toan bo bo trong / anh qua mo).
+MIN_SIGNAL_CEILING = 0.15
+# He so cho cong thuc san-nhieu (CHI dung cho multi_mark): nguong tuyet doi
+# toi thieu = HANG_SO / can(ban_kinh_pixel). O ban kinh binh thuong (~30-40px)
+# san nay chi ~0.08-0.09 (gan nhu khong anh huong, %-theo-tran quyet dinh) -
+# chi thuc su "vao cuoc" khi ban kinh rat nho (~10-15px, anh do phan giai
+# thap), dung luc muc nhieu ngau nhien dang cao nhat.
+NOISE_FLOOR_CONST = 0.5
 # Chi coi la BO TRONG THAT SU khi chenh lech giua o "toi nhat" va o "sang
 # nhat" trong cung 1 cau gan nhu bang 0 - nghia la khong co bat ky dau hieu
-# nao de phan biet, khong phai chi vi tin cay chua du cao (truong hop do van
-# nen doan + danh dau khong chac, xem MIN_FILL_RATIO).
+# nao de phan biet. Day la nguong TUYET DOI rieng, khong thich ung theo tran/
+# do phan giai nhu 3 nguong tren, vi no dai dien cho "khong co gi ca" thay vi
+# "chua du tin cay".
 NEAR_ZERO_SIGNAL = 0.02
-# Nguong RIENG (cao hon MIN_FILL_RATIO) de coi 1 o KHAC (ngoai o duoc chon) la
-# THAT SU cung bi to, dung cho tinh nang phat hien to-nhieu-dap-an ("multi").
-# KHONG dung chung voi MIN_FILL_RATIO (0.14, da ha thap de bot bo sot cau o
-# anh mo) - vi luoi SBD/Ma de co toi 10 ung vien/cot (thay vi 4 nhu dap an),
-# nhieu co hoi hon han de nhieu vuot qua 1 nguong thap, gay bao "to nhieu"
-# oan hang loat (thay tren du lieu that voi anh Continuity Camera/nghieng).
-# Phai đủ cao đe chi bat duoc truong hop THAT SU ro rang (khong phai nhieu).
-MULTI_MARK_MIN_RATIO = 0.30
+
+
+def _adaptive_thresholds(ratio_groups: list[list[float]], radius: float) -> tuple[float, float, float]:
+    # Tinh 3 nguong (min_fill, ambiguous_margin, multi_mark) THICH UNG cho 1
+    # KHOI (vd het cau SBD, het 1 khoi dap an) dua tren tran tin hieu THAT do
+    # duoc tren chinh khoi do va do phan giai (ban kinh pixel). Xem giai thich
+    # chi tiet o dau file.
+    winners = [max(ratios) - min(ratios) for ratios in ratio_groups]
+    signal_ceiling = max(float(np.percentile(winners, CEILING_PERCENTILE)), MIN_SIGNAL_CEILING) if winners else MIN_SIGNAL_CEILING
+
+    min_fill = MIN_FILL_FRACTION * signal_ceiling
+    ambiguous_margin = AMBIGUOUS_MARGIN_FRACTION * signal_ceiling
+    # San chong nhieu CHI ap dung cho multi_mark - day la nguong duy nhat tung
+    # gap bug bao nham hang loat o luoi nhieu ung vien (SBD). min_fill/
+    # ambiguous_margin khong can san nay: neu chung tut thap o 1 khoi qua mo,
+    # ket qua toi te nhat chi la bi gan "khong chac" (an toan) thay vi "chac
+    # chan" - khong tao ra canh bao sai nghiem trong nhu "to nham dap an".
+    noise_floor = NOISE_FLOOR_CONST / (radius ** 0.5) if radius > 0 else MIN_SIGNAL_CEILING
+    multi_mark = max(MULTI_MARK_FRACTION * signal_ceiling, noise_floor)
+    return min_fill, ambiguous_margin, multi_mark
 # Anh chup thuc te thuong bi nghieng/lech nhe (khong vuong goc 100%), nen toa
 # do tinh theo % thuan tuy se le dan cang xa diem goc. Thay vi tin chac vao 1
 # toa do co dinh, do them 1 vung nho quanh vi tri du kien va lay diem dam nhat
@@ -257,13 +281,18 @@ def _find_circle_grid(
     return grid  # type: ignore[return-value]
 
 
-def _pick_best(ratios: list[float]) -> tuple[int | None, str, list[int]]:
+def _pick_best(
+    ratios: list[float], min_fill_ratio: float, ambiguous_margin: float, multi_mark_min_ratio: float,
+) -> tuple[int | None, str, list[int]]:
     # Tra ve (chi so o duoc chon, trang thai, danh sach cac o KHAC cung TU NO
     # DA DU DAM de tinh la da to - khong phai chi vi gan bang o duoc chon).
     # Trang thai: "blank" (khong chenh lech gi - xem NEAR_ZERO_SIGNAL), "multi"
     # (>=2 o cung ro rang da to - hoc sinh to nham/to nhieu dap an cho 1 cau,
     # KHAC voi "khong chac" ve ban chat: khong phai tin cay thap, ma la that
     # su co nhieu hon 1 dau to), "ambiguous" (tin cay chua du cao), "confident".
+    # 3 nguong (min_fill_ratio, ambiguous_margin, multi_mark_min_ratio) do
+    # _adaptive_thresholds() tinh rieng cho tung KHOI - xem giai thich o dau
+    # file, khong con la hang so co dinh chung cho moi anh nua.
     #
     # Tru di ty le THAP NHAT trong nhom truoc khi so nguong: cac o trong 1
     # nhom (vd 4 lua chon A-D cung 1 cau) nam sat nhau nen chiu chung 1 dieu
@@ -279,18 +308,18 @@ def _pick_best(ratios: list[float]) -> tuple[int | None, str, list[int]]:
     if adjusted[best_index] < NEAR_ZERO_SIGNAL:
         return None, "blank", []
 
-    other_marked = [i for i in ranked[1:] if adjusted[i] >= MULTI_MARK_MIN_RATIO]
+    other_marked = [i for i in ranked[1:] if adjusted[i] >= multi_mark_min_ratio]
     if other_marked:
         return best_index, "multi", other_marked
-    if adjusted[best_index] < MIN_FILL_RATIO:
+    if adjusted[best_index] < min_fill_ratio:
         return best_index, "ambiguous", []
-    if len(ranked) > 1 and adjusted[best_index] - adjusted[ranked[1]] < AMBIGUOUS_MARGIN:
+    if len(ranked) > 1 and adjusted[best_index] - adjusted[ranked[1]] < ambiguous_margin:
         return best_index, "ambiguous", []
     return best_index, "confident", []
 
 
 def _detect_digit_grid(
-    gray: np.ndarray, zone: ZoneRect, digits: int, img_w: int, img_h: int, marks: list[CellMark],
+    gray: np.ndarray, zone: ZoneRect, digits: int, img_w: int, img_h: int, marks: list[CellMark], label: str = "",
 ) -> tuple[str, list[int]]:
     px0, py0, px1, py1 = _zone_to_px(zone, img_w, img_h)
     col_width = (px1 - px0) / digits
@@ -305,6 +334,8 @@ def _detect_digit_grid(
     result_digits: list[str] = []
     ambiguous_positions: list[int] = []
 
+    # Vong 1 - do het, chua quyet dinh gi.
+    columns_data: list[tuple[list[float], list[tuple[float, float]]]] = []
     for col in range(digits):
         ratios = []
         positions = []
@@ -321,8 +352,20 @@ def _detect_digit_grid(
             ratio, best_cx, best_cy = _best_fill_ratio(gray, cx, cy, radius, search_range, bounds)
             ratios.append(ratio)
             positions.append((best_cx, best_cy))
+        columns_data.append((ratios, positions))
 
-        best_row, status, other_marked = _pick_best(ratios)
+    min_fill_ratio, ambiguous_margin, multi_mark_min_ratio = _adaptive_thresholds(
+        [ratios for ratios, _ in columns_data], radius,
+    )
+    _dbg(
+        f"khoi {label or 'so'}: nguong thich ung min_fill={min_fill_ratio:.2f}"
+        f" ambiguous_margin={ambiguous_margin:.2f} multi_mark={multi_mark_min_ratio:.2f}"
+        f" (radius={radius:.0f}px)",
+    )
+
+    # Vong 2 - da biet nguong thich ung, quyet dinh tung cot.
+    for col, (ratios, positions) in enumerate(columns_data):
+        best_row, status, other_marked = _pick_best(ratios, min_fill_ratio, ambiguous_margin, multi_mark_min_ratio)
         if best_row is None:
             result_digits.append("?")
             # Khong doc duoc so nao ro rang - VAN ve 1 vong cam o vi tri "toi
@@ -341,6 +384,9 @@ def _detect_digit_grid(
                 marks.append(CellMark(extra_cx, extra_cy, radius, status))
         if status in ("ambiguous", "multi"):
             ambiguous_positions.append(col)
+        ratio_str = ", ".join(f"{r:.2f}" for r in ratios)
+        chosen = str(best_row) if best_row is not None else "(bo trong)"
+        _dbg(f"{label or 'so'} cot {col}: [{ratio_str}] -> chon={chosen} status={status}")
 
     return "".join(result_digits), ambiguous_positions
 
@@ -375,6 +421,8 @@ def _detect_answer_blocks(
         block_answers: list[str] = [""] * block.num_questions
         block_ambiguous: list[bool] = [False] * block.num_questions
 
+        # Vong 1 - do het ca khoi, chua quyet dinh gi.
+        cells_data: list[tuple[list[float], list[tuple[float, float]], list[tuple[float, float]], int]] = []
         for row in range(rows_per_column):
             for strip in range(block.num_columns):
                 ratios = []
@@ -399,40 +447,55 @@ def _detect_answer_blocks(
                     ratios.append(ratio)
                     positions.append((best_cx, best_cy))
                     raw_positions.append((cx, cy))
-
-                best_choice, status, other_marked = _pick_best(ratios)
                 local_index = strip * rows_per_column + row
-                if best_choice is None:
-                    block_answers[local_index] = ""
-                    # Khong doc duoc dap an nao ro rang - van ve 1 vong cam o
-                    # vi tri "toi nhat trong so cac o toi" tren preview, thay
-                    # vi im lang khong ve gi (de nguoi dung de dang thay ngay
-                    # cau nao can xem lai bang mat).
-                    fallback_choice = max(range(len(ratios)), key=lambda i: ratios[i])
-                    fallback_cx, fallback_cy = positions[fallback_choice]
-                    marks.append(CellMark(fallback_cx, fallback_cy, radius, "ambiguous"))
-                else:
-                    block_answers[local_index] = chr(ord("A") + best_choice)
-                    mark_cx, mark_cy = positions[best_choice]
-                    marks.append(CellMark(mark_cx, mark_cy, radius, status))
-                    # "multi": hoc sinh to nham/to hon 1 dap an cho cung 1 cau -
-                    # ve vong DO cho TAT CA cac o cung ro rang da to, khong chi
-                    # o duoc chon, de nguoi xem thay het cac cho bi to thay vi
-                    # chi thay 1 vong roi tuong nham la doc thieu.
-                    for extra_choice in other_marked:
-                        extra_cx, extra_cy = positions[extra_choice]
-                        marks.append(CellMark(extra_cx, extra_cy, radius, status))
-                block_ambiguous[local_index] = status in ("ambiguous", "multi")
-                ratio_str = ", ".join(
-                    f"{chr(ord('A') + i)}={r:.2f}@({raw_positions[i][0]:.0f},{raw_positions[i][1]:.0f})"
-                    for i, r in enumerate(ratios)
-                )
-                chosen = block_answers[local_index] or "(bo trong)"
-                _dbg(
-                    f"cau {question_number + local_index}: [{ratio_str}]"
-                    f" -> chon={chosen} status={status}"
-                    f" (dung_luoi_o_tron={circle_grid is not None})",
-                )
+                cells_data.append((ratios, positions, raw_positions, local_index))
+
+        min_fill_ratio, ambiguous_margin, multi_mark_min_ratio = _adaptive_thresholds(
+            [ratios for ratios, _, _, _ in cells_data], radius,
+        )
+        _dbg(
+            f"khoi cau {question_number}-{question_number + block.num_questions - 1}:"
+            f" nguong thich ung min_fill={min_fill_ratio:.2f}"
+            f" ambiguous_margin={ambiguous_margin:.2f} multi_mark={multi_mark_min_ratio:.2f}"
+            f" (radius={radius:.0f}px)",
+        )
+
+        # Vong 2 - da biet nguong thich ung cua khoi nay, quyet dinh tung cau.
+        for ratios, positions, raw_positions, local_index in cells_data:
+            best_choice, status, other_marked = _pick_best(
+                ratios, min_fill_ratio, ambiguous_margin, multi_mark_min_ratio,
+            )
+            if best_choice is None:
+                block_answers[local_index] = ""
+                # Khong doc duoc dap an nao ro rang - van ve 1 vong cam o
+                # vi tri "toi nhat trong so cac o toi" tren preview, thay
+                # vi im lang khong ve gi (de nguoi dung de dang thay ngay
+                # cau nao can xem lai bang mat).
+                fallback_choice = max(range(len(ratios)), key=lambda i: ratios[i])
+                fallback_cx, fallback_cy = positions[fallback_choice]
+                marks.append(CellMark(fallback_cx, fallback_cy, radius, "ambiguous"))
+            else:
+                block_answers[local_index] = chr(ord("A") + best_choice)
+                mark_cx, mark_cy = positions[best_choice]
+                marks.append(CellMark(mark_cx, mark_cy, radius, status))
+                # "multi": hoc sinh to nham/to hon 1 dap an cho cung 1 cau -
+                # ve vong DO cho TAT CA cac o cung ro rang da to, khong chi
+                # o duoc chon, de nguoi xem thay het cac cho bi to thay vi
+                # chi thay 1 vong roi tuong nham la doc thieu.
+                for extra_choice in other_marked:
+                    extra_cx, extra_cy = positions[extra_choice]
+                    marks.append(CellMark(extra_cx, extra_cy, radius, status))
+            block_ambiguous[local_index] = status in ("ambiguous", "multi")
+            ratio_str = ", ".join(
+                f"{chr(ord('A') + i)}={r:.2f}@({raw_positions[i][0]:.0f},{raw_positions[i][1]:.0f})"
+                for i, r in enumerate(ratios)
+            )
+            chosen = block_answers[local_index] or "(bo trong)"
+            _dbg(
+                f"cau {question_number + local_index}: [{ratio_str}]"
+                f" -> chon={chosen} status={status}"
+                f" (dung_luoi_o_tron={circle_grid is not None})",
+            )
 
         for local_index in range(block.num_questions):
             answers.append(block_answers[local_index])
@@ -450,8 +513,8 @@ def _run_detection_core(
     img_h, img_w = gray.shape[:2]
     marks: list[CellMark] = []
 
-    sbd, sbd_ambiguous = _detect_digit_grid(gray, template.sbd_zone, template.sbd_digits, img_w, img_h, marks)
-    made, made_ambiguous = _detect_digit_grid(gray, template.made_zone, template.made_digits, img_w, img_h, marks)
+    sbd, sbd_ambiguous = _detect_digit_grid(gray, template.sbd_zone, template.sbd_digits, img_w, img_h, marks, "SBD")
+    made, made_ambiguous = _detect_digit_grid(gray, template.made_zone, template.made_digits, img_w, img_h, marks, "Ma de")
     answers, ambiguous_questions = _detect_answer_blocks(
         gray, template.answer_blocks, template.num_choices, img_w, img_h, marks,
     )

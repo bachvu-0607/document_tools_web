@@ -125,24 +125,38 @@ def _find_marker_candidates(gray: np.ndarray, threshold: int | str, strict: bool
             continue
         candidates.append((cx, cy))
 
-    _dbg(
-        f"threshold={threshold}: {len(candidates)} ung vien hop le"
-        f" (loai vi sai/qua/thieu dien tich={rejected_by_area},"
-        f" sai ty le canh={rejected_by_aspect}, khong dac hinh vuong={rejected_by_solidity})",
-    )
-    for cx, cy in candidates:
-        _dbg(f"    ung vien tai ({cx:.0f}, {cy:.0f})")
+    # strict=True la vong kiem tra camera truc tiep (goi lien tuc moi ~300ms
+    # khi camera dang mo) - log chi tiet tung ung vien o day se ngap log rat
+    # nhanh ma khong giup ich gi (chi can biet KET QUA cuoi: du/khong du 4
+    # goc). Chi log day du cho strict=False (xu ly anh that su, it goi hon
+    # nhieu - vd 1 lan/luot cham bai).
+    if not strict:
+        _dbg(
+            f"threshold={threshold}: {len(candidates)} ung vien hop le"
+            f" (loai vi sai/qua/thieu dien tich={rejected_by_area},"
+            f" sai ty le canh={rejected_by_aspect}, khong dac hinh vuong={rejected_by_solidity})",
+        )
+        for cx, cy in candidates:
+            _dbg(f"    ung vien tai ({cx:.0f}, {cy:.0f})")
 
     return np.array(candidates, dtype=np.float32)
 
 
-def _pick_outer_corners(candidates: np.ndarray, img_w: int, img_h: int) -> np.ndarray | None:
+def _pick_outer_corners(
+    candidates: np.ndarray, img_w: int, img_h: int, verbose: bool = True,
+) -> np.ndarray | None:
     # Trong so cac o vuong den tim duoc (ca dau goc trang lan dau moc noi bo
     # giua cac khoi), 4 goc THAT cua trang luon la 4 diem CUC BIEN nhat - tong
     # x+y nho nhat/lon nhat va hieu x-y nho nhat/lon nhat - vi moi diem noi bo
     # nam gan tam trang hon nhieu so voi 4 goc ngoai cung.
+    # verbose=False cho vong kiem tra camera truc tiep (goi lien tuc moi
+    # ~300ms) - tranh ngap log, xem giai thich o _find_marker_candidates.
+    def dbg(*args) -> None:
+        if verbose:
+            _dbg(*args)
+
     if len(candidates) < 4:
-        _dbg(f"chi co {len(candidates)} ung vien (< 4), bo qua nguong nay")
+        dbg(f"chi co {len(candidates)} ung vien (< 4), bo qua nguong nay")
         return None
 
     sums = candidates[:, 0] + candidates[:, 1]
@@ -154,7 +168,7 @@ def _pick_outer_corners(candidates: np.ndarray, img_w: int, img_h: int) -> np.nd
     bottom_left = candidates[np.argmin(diffs)]
 
     corners = np.array([top_left, top_right, bottom_right, bottom_left], dtype=np.float32)
-    _dbg(
+    dbg(
         f"4 goc cuc bien chon duoc: TL=({top_left[0]:.0f},{top_left[1]:.0f})"
         f" TR=({top_right[0]:.0f},{top_right[1]:.0f})"
         f" BR=({bottom_right[0]:.0f},{bottom_right[1]:.0f})"
@@ -168,7 +182,7 @@ def _pick_outer_corners(candidates: np.ndarray, img_w: int, img_h: int) -> np.nd
     for i in range(4):
         for j in range(i + 1, 4):
             if np.linalg.norm(corners[i] - corners[j]) < 10:
-                _dbg("tu choi: 2 trong 4 goc qua gan nhau (trung diem)")
+                dbg("tu choi: 2 trong 4 goc qua gan nhau (trung diem)")
                 return None
 
     # Kiem tra hinh dang co hop ly khong (2 canh doi dien khong duoc lech qua
@@ -178,10 +192,10 @@ def _pick_outer_corners(candidates: np.ndarray, img_w: int, img_h: int) -> np.nd
     bottom_len = np.linalg.norm(bottom_right - bottom_left)
     left_len = np.linalg.norm(bottom_left - top_left)
     right_len = np.linalg.norm(bottom_right - top_right)
-    _dbg(f"do dai 4 canh: tren={top_len:.0f} duoi={bottom_len:.0f} trai={left_len:.0f} phai={right_len:.0f}")
+    dbg(f"do dai 4 canh: tren={top_len:.0f} duoi={bottom_len:.0f} trai={left_len:.0f} phai={right_len:.0f}")
     for a, b in ((top_len, bottom_len), (left_len, right_len)):
         if a <= 0 or b <= 0 or max(a, b) / min(a, b) > MAX_SIDE_RATIO:
-            _dbg(f"tu choi: 2 canh doi dien lech qua nhieu (ty le > {MAX_SIDE_RATIO})")
+            dbg(f"tu choi: 2 canh doi dien lech qua nhieu (ty le > {MAX_SIDE_RATIO})")
             return None
 
     # 4 goc phai trai gan het khung anh, khong chi la 1 hinh chu nhat nho lot
@@ -191,12 +205,12 @@ def _pick_outer_corners(candidates: np.ndarray, img_w: int, img_h: int) -> np.nd
     ys = corners[:, 1]
     width_ratio = (xs.max() - xs.min()) / img_w
     height_ratio = (ys.max() - ys.min()) / img_h
-    _dbg(f"ty le bao phu khung anh: rong={width_ratio:.2f} cao={height_ratio:.2f} (can >= {MIN_COVERAGE_RATIO})")
+    dbg(f"ty le bao phu khung anh: rong={width_ratio:.2f} cao={height_ratio:.2f} (can >= {MIN_COVERAGE_RATIO})")
     if width_ratio < MIN_COVERAGE_RATIO or height_ratio < MIN_COVERAGE_RATIO:
-        _dbg("tu choi: 4 goc khong bao phu du khung anh")
+        dbg("tu choi: 4 goc khong bao phu du khung anh")
         return None
 
-    _dbg("CHAP NHAN 4 goc nay")
+    dbg("CHAP NHAN 4 goc nay")
     return corners
 
 
@@ -222,7 +236,7 @@ def check_alignment(color: np.ndarray) -> bool:
     img_h, img_w = gray.shape[:2]
     for threshold in THRESHOLD_ATTEMPTS:
         candidates = _find_marker_candidates(gray, threshold, strict=True)
-        if _pick_outer_corners(candidates, img_w, img_h) is not None:
+        if _pick_outer_corners(candidates, img_w, img_h, verbose=False) is not None:
             return True
     return False
 
