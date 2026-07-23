@@ -171,7 +171,7 @@ export function OmrResultsPanel() {
                   <th className="px-3 py-2 font-medium">Mã đề</th>
                   <th className="px-3 py-2 font-medium">Phiếu</th>
                   <th className="px-3 py-2 font-medium">Điểm</th>
-                  <th className="px-3 py-2 font-medium">Đúng/Sai/Trống/?</th>
+                  <th className="px-3 py-2 font-medium">Đúng/Sai/Trống</th>
                   <th className="px-3 py-2 font-medium">Lưu lúc</th>
                   <th className="px-3 py-2 font-medium"></th>
                 </tr>
@@ -200,7 +200,7 @@ export function OmrResultsPanel() {
                     </td>
                     <td className="px-3 py-2 font-semibold">{r.score_10}</td>
                     <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
-                      {r.correct_count}/{r.wrong_count}/{r.blank_count}/{r.ambiguous_count}
+                      {r.correct_count}/{r.wrong_count}/{r.blank_count}
                     </td>
                     <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
                       {new Date(r.saved_at).toLocaleString("vi-VN")}

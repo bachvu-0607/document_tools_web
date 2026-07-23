@@ -91,7 +91,7 @@ async def delete_omr_graded_result(result_id: str, user_id: str) -> None:
 
 EXCEL_HEADERS = [
     "STT", "Lớp", "SBD", "Mã đề", "Tên phiếu", "Điểm",
-    "Đúng", "Sai", "Bỏ trống", "Không chắc", "Lưu lúc",
+    "Đúng", "Sai", "Bỏ trống", "Lưu lúc",
 ]
 
 
@@ -128,7 +128,6 @@ async def export_graded_results_excel(result_ids: list[str], user_id: str) -> by
             row["correct_count"],
             row["wrong_count"],
             row["blank_count"],
-            row["ambiguous_count"],
             row["saved_at"],
         ])
 

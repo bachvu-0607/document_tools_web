@@ -13,7 +13,6 @@ from PIL import Image, ImageOps
 MIN_MARKER_AREA_RATIO = 0.00005
 MAX_MARKER_AREA_RATIO = 0.01
 MIN_ASPECT_RATIO = 0.6
-MAX_ASPECT_RATIO = 1.4
 MIN_SOLIDITY = 0.8
 # 2 canh doi dien cua 1 to giay chup (du hoi nghieng do goc chup) khong the
 # lech nhau qua nhieu - neu chenh lech vuot qua ty le nay, nhieu kha nang 1
@@ -78,7 +77,14 @@ def decode_image_exif_aware(image_bytes: bytes) -> np.ndarray | None:
 THRESHOLD_ATTEMPTS = [100, 130, 70, "otsu"]
 
 
-def _find_marker_candidates(gray: np.ndarray, threshold: int | str) -> np.ndarray:
+def _find_marker_candidates(gray: np.ndarray, threshold: int | str, strict: bool = False) -> np.ndarray:
+    # strict=True dung khung bao THANG TRUC (boundingRect) nhu ban dau - chi
+    # nhan o vuong gan nhu KHONG xoay (~<7 do). Dung rieng cho vong kiem tra
+    # camera truc tiep (check_alignment) - MUC DICH của no la BAT nguoi dung
+    # tu canh phieu that thang truoc ong kinh, khong phai de "tha long" cho
+    # thuat toan tu sua. strict=False (mac dinh) dung minAreaRect - chiu duoc
+    # o vuong bi XOAY (anh chup/upload da nghieng san, khong sua duoc nua vi
+    # anh da co roi) ma van la hinh vuong THAT ve mat hinh hoc.
     img_area = gray.shape[0] * gray.shape[1]
     if threshold == "otsu":
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -97,18 +103,27 @@ def _find_marker_candidates(gray: np.ndarray, threshold: int | str) -> np.ndarra
             if area_ratio > 0:
                 rejected_by_area += 1
             continue
-        x, y, box_w, box_h = cv2.boundingRect(contour)
-        if box_h == 0:
-            continue
-        aspect = box_w / box_h
-        if not (MIN_ASPECT_RATIO <= aspect <= MAX_ASPECT_RATIO):
+        if strict:
+            x, y, box_w, box_h = cv2.boundingRect(contour)
+            if box_h == 0:
+                continue
+            cx, cy = x + box_w / 2, y + box_h / 2
+            aspect = min(box_w, box_h) / max(box_w, box_h)
+            box_area = box_w * box_h
+        else:
+            (cx, cy), (rw, rh), _angle = cv2.minAreaRect(contour)
+            if rw <= 0 or rh <= 0:
+                continue
+            aspect = min(rw, rh) / max(rw, rh)
+            box_area = rw * rh
+        if aspect < MIN_ASPECT_RATIO:
             rejected_by_aspect += 1
             continue
-        solidity = area / (box_w * box_h)
+        solidity = area / box_area
         if solidity < MIN_SOLIDITY:
             rejected_by_solidity += 1
             continue
-        candidates.append((x + box_w / 2, y + box_h / 2))
+        candidates.append((cx, cy))
 
     _dbg(
         f"threshold={threshold}: {len(candidates)} ung vien hop le"
@@ -197,10 +212,16 @@ def check_alignment(color: np.ndarray) -> bool:
     # nan/warp gi ca. Dung cho tinh nang camera truc tiep: kiem tra lien tuc
     # moi ~1s xem nguoi dung da canh may khop giay chua, khong can tinh phep
     # bien doi day du moi lan (nhe hon, phan hoi nhanh hon).
+    #
+    # strict=True (khac voi align_image/detect dung sau khi da co anh) - o day
+    # MUC DICH la nhac nguoi dung tu CANH THANG phieu truoc ong kinh that su
+    # truoc khi tu dong chup (anh chup thang se net hon, do chinh xac cao hon
+    # ca cai thuat toan nan bu sau nay), khong phai de chap nhan moi goc nghieng
+    # roi tinh chup ngay ca khi phieu con dang lech trong khung hinh.
     gray = cv2.cvtColor(color, cv2.COLOR_BGR2GRAY)
     img_h, img_w = gray.shape[:2]
     for threshold in THRESHOLD_ATTEMPTS:
-        candidates = _find_marker_candidates(gray, threshold)
+        candidates = _find_marker_candidates(gray, threshold, strict=True)
         if _pick_outer_corners(candidates, img_w, img_h) is not None:
             return True
     return False

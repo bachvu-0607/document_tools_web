@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -8,6 +8,7 @@ import { OmrAnswerGrid } from "@/components/OmrAnswerGrid";
 import { OmrCameraCapture } from "@/components/OmrCameraCapture";
 import { OmrDigitsEditor } from "@/components/OmrDigitsEditor";
 import {
+  deleteOmrSheet,
   gradeOmrSheetsBatch,
   getOmrSheetPreviewUrl,
   listOmrAnswerKeys,
@@ -51,6 +52,25 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
   const [savingFix, setSavingFix] = useState(false);
   const [previewCacheBust, setPreviewCacheBust] = useState(0);
 
+  // Anh chup qua camera trong tab nay chi dung 1 lan de doc, khong can giu
+  // lai lau dai (khac voi anh tai len thu cong o tab Upload - van luu binh
+  // thuong). Theo doi rieng cac sheet_id tao qua camera trong phien lam viec
+  // nay, xoa het khoi database ngay khi ROI KHOI tab Cham bai (xem useEffect
+  // cleanup ben duoi) - tranh tich rac database ma khong anh huong Bang diem
+  // (ket qua da luu vao omr_graded_results la du lieu doc lap, khong phu
+  // thuoc anh goc con ton tai hay khong).
+  const cameraSheetIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    return () => {
+      for (const id of cameraSheetIdsRef.current) {
+        void deleteOmrSheet(id).catch(() => {
+          // Best-effort - khong chan viec chuyen tab neu xoa that bai.
+        });
+      }
+    };
+  }, []);
+
   async function refreshSheets() {
     try {
       setSheets(await listOmrSheets());
@@ -84,18 +104,22 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
   }
 
   function handleCameraCaptured(sheet: OmrSheetResponse) {
-    // Chup xong tu dong them luon vao danh sach "can cham" - do dung tinh
-    // nang nay chinh la de bo qua buoc chuyen tab Upload -> chon file thu cong.
-    setSelectedSheetIds((prev) => (prev.includes(sheet.id) ? prev : [...prev, sheet.id]));
+    // Chup xong: BO CHON tat ca phieu dang chon truoc do, chi chon rieng
+    // phieu vua chup, va cham luon ngay - dung cho luong quet lien tuc tung
+    // bai 1 bang camera (chup - xem diem - nhac phieu ra - chup bai tiep),
+    // khong con phai tu tay bo chon phieu cu / bam nut Cham moi lan.
+    cameraSheetIdsRef.current.add(sheet.id);
+    setSelectedSheetIds([sheet.id]);
     void refreshSheets();
+    void handleGrade([sheet.id]);
   }
 
-  async function handleGrade() {
-    if (!answerKeyId || selectedSheetIds.length === 0) return;
+  async function handleGrade(sheetIds: string[] = selectedSheetIds) {
+    if (!answerKeyId || sheetIds.length === 0) return;
     setGrading(true);
     setGradeError("");
     try {
-      const response = await gradeOmrSheetsBatch(answerKeyId, selectedSheetIds);
+      const response = await gradeOmrSheetsBatch(answerKeyId, sheetIds);
       setResults(response.results);
       setActiveIndex(0);
       setSavedSheetIds(new Set());
@@ -256,7 +280,7 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
         <Button
           disabled={!answerKeyId || selectedSheetIds.length === 0}
           loading={grading}
-          onClick={handleGrade}
+          onClick={() => void handleGrade()}
           type="button"
         >
           {grading ? "Đang chấm" : `Chấm ${selectedSheetIds.length || ""} bài`}
@@ -405,7 +429,12 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
             )}
 
             <div className="grid gap-2">
-              <p className="text-sm font-medium">Ảnh preview</p>
+              <p className="text-sm font-medium">
+                Ảnh preview{" "}
+                <span className="font-normal text-zinc-500 dark:text-zinc-400">
+                  (vòng tròn trên ảnh — xanh dương = chắc chắn, cam = không chắc, đỏ = tô từ 2 ô trở lên cho cùng 1 câu — khác với màu Xanh lá/Đỏ ở bảng đáp án phía trên)
+                </span>
+              </p>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 alt="Preview cham bai"

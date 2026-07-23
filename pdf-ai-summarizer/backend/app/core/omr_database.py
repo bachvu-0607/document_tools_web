@@ -101,6 +101,15 @@ async def init_omr_db() -> None:
         except aiosqlite.OperationalError:
             pass  # cot da ton tai roi, bo qua
         try:
+            # Phan biet ban doc TU DONG (co the ghi de moi lan cham lai - de
+            # luon phan anh dung thuat toan detect MOI NHAT, quan trong vi
+            # thuat toan con dang duoc tinh chinh lien tuc) voi ban NGUOI DUNG
+            # DA TU SUA qua "Sua khoanh" (khong duoc ghi de am tham, se mat
+            # cong sua tay - xem get_or_run_detection).
+            await conn.execute("ALTER TABLE omr_detections ADD COLUMN is_manual INTEGER NOT NULL DEFAULT 0;")
+        except aiosqlite.OperationalError:
+            pass  # cot da ton tai roi, bo qua
+        try:
             # Ban do toan bo dau moc (o vuong den) do duoc tren anh mau luc tao
             # template - dung de nan tinh chinh chinh xac hon cho tung anh
             # phieu hoc sinh sau nay (xem omr_align_service.align_image_with_template).
@@ -309,7 +318,7 @@ async def delete_template_record(template_id: str) -> None:
 
 DETECTION_COLUMNS = """
     sheet_id, template_id, sbd, sbd_ambiguous_digits, made, made_ambiguous_digits,
-    answers, ambiguous_questions, detected_at, aligned
+    answers, ambiguous_questions, detected_at, aligned, is_manual
 """
 
 
@@ -325,14 +334,15 @@ async def save_detection_record(
     ambiguous_questions: str,
     detected_at: str,
     aligned: bool = True,
+    is_manual: bool = False,
 ) -> None:
     async with aiosqlite.connect(settings.database_path) as conn:
         await conn.execute(
             """
             INSERT INTO omr_detections
                 (sheet_id, user_id, template_id, sbd, sbd_ambiguous_digits, made,
-                 made_ambiguous_digits, answers, ambiguous_questions, detected_at, aligned)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 made_ambiguous_digits, answers, ambiguous_questions, detected_at, aligned, is_manual)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(sheet_id) DO UPDATE SET
                 user_id = excluded.user_id,
                 template_id = excluded.template_id,
@@ -343,12 +353,13 @@ async def save_detection_record(
                 answers = excluded.answers,
                 ambiguous_questions = excluded.ambiguous_questions,
                 detected_at = excluded.detected_at,
-                aligned = excluded.aligned;
+                aligned = excluded.aligned,
+                is_manual = excluded.is_manual;
             """,
             (
                 sheet_id, user_id, template_id, sbd, sbd_ambiguous_digits, made,
                 made_ambiguous_digits, answers, ambiguous_questions, detected_at,
-                int(aligned),
+                int(aligned), int(is_manual),
             ),
         )
         await conn.commit()

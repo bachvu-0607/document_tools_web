@@ -12,13 +12,41 @@ from app.services.omr_align_service import align_image_with_template, decode_ima
 from app.services.omr_storage import get_omr_sheet_file
 from app.services.omr_template_service import get_omr_template
 
-# Ty le "toi" toi thieu trong 1 o de coi la DA TO - duoi nguong nay coi nhu bo
-# trong. Can tinh chinh lai sau khi test tren nhieu anh chup thuc te (anh sang/
-# do phoi sang khac nhau co the can nguong khac).
-MIN_FILL_RATIO = 0.18
+# Ty le "toi" toi thieu trong 1 o de coi la CHAC CHAN da to (tren nguong nay
+# moi khong bi danh dau "khong chac"). KHONG dung de quyet dinh bo trong -
+# hoc sinh lam bai trac nghiem gan nhu luon to 1 dap an, nen mien co chenh
+# lech NAO do giua 4 o (xem NEAR_ZERO_SIGNAL ben duoi) van nen doan dap an
+# kha di nhat + danh dau khong chac, con hon bo trong that su khong giup ich
+# gi cho nguoi xem lai.
+# 0.14 (thay vi 0.18 truoc do) - cung ly do voi AMBIGUOUS_MARGIN ben duoi:
+# o do phan giai Continuity Camera (~1440x1920), nhieu cau CHAC CHAN DUNG chi
+# dat do dam sau khi tru nen ~0.16-0.18, bi chan oan boi nguong 0.18 cu du
+# khoang cach voi o thu nhi da du rong. Ap dung cho MOI anh, khong rieng
+# Continuity Camera.
+MIN_FILL_RATIO = 0.14
 # Neu o co ty le "toi" cao nhi nhi va cao nhi la gan bang nhau (chenh lech duoi
 # muc nay), coi la to mo/to doi - khong doan bua, danh dau de nguoi xem lai.
-AMBIGUOUS_MARGIN = 0.15
+# 0.12 (thay vi 0.15 truoc do) - Continuity Camera (iPhone lam webcam cho Mac
+# qua web) bi macOS gioi han cung o ~1440x1920px (trang webcam goi video, KHONG
+# phai do phan giai chup anh that cua iPhone - kiem chung qua so lieu thuc te:
+# cac o chac chan dung o do phan giai nay thuong chi cach nhau ~0.13-0.14, bi
+# nguong 0.15 cu gan co "khong chac" oan). Danh doi: giam nhe do an toan chong
+# doc nham o MOI do phan giai (ke ca anh net), doi lai bot canh bao gia o
+# anh chup qua Continuity Camera.
+AMBIGUOUS_MARGIN = 0.12
+# Chi coi la BO TRONG THAT SU khi chenh lech giua o "toi nhat" va o "sang
+# nhat" trong cung 1 cau gan nhu bang 0 - nghia la khong co bat ky dau hieu
+# nao de phan biet, khong phai chi vi tin cay chua du cao (truong hop do van
+# nen doan + danh dau khong chac, xem MIN_FILL_RATIO).
+NEAR_ZERO_SIGNAL = 0.02
+# Nguong RIENG (cao hon MIN_FILL_RATIO) de coi 1 o KHAC (ngoai o duoc chon) la
+# THAT SU cung bi to, dung cho tinh nang phat hien to-nhieu-dap-an ("multi").
+# KHONG dung chung voi MIN_FILL_RATIO (0.14, da ha thap de bot bo sot cau o
+# anh mo) - vi luoi SBD/Ma de co toi 10 ung vien/cot (thay vi 4 nhu dap an),
+# nhieu co hoi hon han de nhieu vuot qua 1 nguong thap, gay bao "to nhieu"
+# oan hang loat (thay tren du lieu that voi anh Continuity Camera/nghieng).
+# Phai đủ cao đe chi bat duoc truong hop THAT SU ro rang (khong phai nhieu).
+MULTI_MARK_MIN_RATIO = 0.30
 # Anh chup thuc te thuong bi nghieng/lech nhe (khong vuong goc 100%), nen toa
 # do tinh theo % thuan tuy se le dan cang xa diem goc. Thay vi tin chac vao 1
 # toa do co dinh, do them 1 vung nho quanh vi tri du kien va lay diem dam nhat
@@ -42,7 +70,11 @@ class CellMark:
     cx: float
     cy: float
     radius: float
-    ambiguous: bool
+    # "confident" = chac chan (xanh), "ambiguous" = 1 o duoc chon nhung tin
+    # cay chua cao (cam), "multi" = PHAT HIEN >=2 o CUNG TU no da du dam de
+    # tinh la da to (do) - khac hang voi "ambiguous": khong phai tin cay thap,
+    # ma la ro rang co nhieu hon 1 dap an duoc to cho cung 1 cau.
+    status: str
 
 
 async def _load_images(sheet_bytes: bytes, template_id: str) -> tuple[np.ndarray, np.ndarray, bool]:
@@ -76,7 +108,7 @@ def _zone_to_px(zone: ZoneRect, img_w: int, img_h: int) -> tuple[float, float, f
 # day sat 1.00 het ca 4 lua chon). Thu hep xuong 1 HINH TRON nho nam han vao
 # trong long o, tranh dung phai vien in san, chi con do dung phan giay TRANG
 # hay bi to den ben trong.
-_SAMPLE_RADIUS_FACTOR = 0.7
+_SAMPLE_RADIUS_FACTOR = 0.85
 
 
 def _fill_ratio(gray: np.ndarray, cx: float, cy: float, radius: float) -> float:
@@ -93,7 +125,16 @@ def _fill_ratio(gray: np.ndarray, cx: float, cy: float, radius: float) -> float:
     mask_count = int(np.count_nonzero(mask))
     if mask_count == 0:
         return 0.0
-    return float(np.count_nonzero((patch < 150) & mask)) / mask_count
+    # Do TOI TRUNG BINH lien tuc (0 = trang tinh, 1 = den tuyet doi) thay vi
+    # dem so pixel duoi 1 nguong CO DINH (150). Anh chup thuc te co the bi LOA
+    # SANG (phan chieu den/flash) o mot vung - luc do muc toi that su cua net
+    # but/chi cung bi day len, co the KHONG BAO GIO xuong duoi nguong co dinh
+    # (thay tren du lieu that: ca 4 lua chon 1 cau deu doc ra ~0.1-0.2 nhu
+    # nhau du 1 o ro rang co to). Trung binh lien tuc van giu duoc phan chenh
+    # lech TUONG DOI so voi 3 o con lai trong cung cau (xem _pick_best), du
+    # muc do sang toi tuyet doi co bi lech ca vung.
+    mean_intensity = float(patch[mask].mean())
+    return 1.0 - (mean_intensity / 255.0)
 
 
 def _best_fill_ratio(
@@ -216,9 +257,13 @@ def _find_circle_grid(
     return grid  # type: ignore[return-value]
 
 
-def _pick_best(ratios: list[float]) -> tuple[int | None, bool]:
-    # Tra ve (chi so o duoc chon, co phai "to mo/to doi" khong). Chi so None
-    # nghia la bo trong (khong o nao vuot nguong toi thieu).
+def _pick_best(ratios: list[float]) -> tuple[int | None, str, list[int]]:
+    # Tra ve (chi so o duoc chon, trang thai, danh sach cac o KHAC cung TU NO
+    # DA DU DAM de tinh la da to - khong phai chi vi gan bang o duoc chon).
+    # Trang thai: "blank" (khong chenh lech gi - xem NEAR_ZERO_SIGNAL), "multi"
+    # (>=2 o cung ro rang da to - hoc sinh to nham/to nhieu dap an cho 1 cau,
+    # KHAC voi "khong chac" ve ban chat: khong phai tin cay thap, ma la that
+    # su co nhieu hon 1 dau to), "ambiguous" (tin cay chua du cao), "confident".
     #
     # Tru di ty le THAP NHAT trong nhom truoc khi so nguong: cac o trong 1
     # nhom (vd 4 lua chon A-D cung 1 cau) nam sat nhau nen chiu chung 1 dieu
@@ -231,11 +276,17 @@ def _pick_best(ratios: list[float]) -> tuple[int | None, bool]:
     adjusted = [r - baseline for r in ratios]
     ranked = sorted(range(len(adjusted)), key=lambda i: adjusted[i], reverse=True)
     best_index = ranked[0]
+    if adjusted[best_index] < NEAR_ZERO_SIGNAL:
+        return None, "blank", []
+
+    other_marked = [i for i in ranked[1:] if adjusted[i] >= MULTI_MARK_MIN_RATIO]
+    if other_marked:
+        return best_index, "multi", other_marked
     if adjusted[best_index] < MIN_FILL_RATIO:
-        return None, False
+        return best_index, "ambiguous", []
     if len(ranked) > 1 and adjusted[best_index] - adjusted[ranked[1]] < AMBIGUOUS_MARGIN:
-        return best_index, True
-    return best_index, False
+        return best_index, "ambiguous", []
+    return best_index, "confident", []
 
 
 def _detect_digit_grid(
@@ -271,14 +322,24 @@ def _detect_digit_grid(
             ratios.append(ratio)
             positions.append((best_cx, best_cy))
 
-        best_row, is_ambiguous = _pick_best(ratios)
+        best_row, status, other_marked = _pick_best(ratios)
         if best_row is None:
             result_digits.append("?")
+            # Khong doc duoc so nao ro rang - VAN ve 1 vong cam o vi tri "toi
+            # nhat trong so cac o toi" tren preview, thay vi im lang khong ve
+            # gi (de nguoi dung de dang thay ngay cot nao can xem lai bang mat,
+            # khong bi lam tuong la "chac chan khong co gi o day").
+            fallback_row = max(range(len(ratios)), key=lambda i: ratios[i])
+            fallback_cx, fallback_cy = positions[fallback_row]
+            marks.append(CellMark(fallback_cx, fallback_cy, radius, "ambiguous"))
         else:
             result_digits.append(str(best_row))
             mark_cx, mark_cy = positions[best_row]
-            marks.append(CellMark(mark_cx, mark_cy, radius, is_ambiguous))
-        if is_ambiguous:
+            marks.append(CellMark(mark_cx, mark_cy, radius, status))
+            for extra_row in other_marked:
+                extra_cx, extra_cy = positions[extra_row]
+                marks.append(CellMark(extra_cx, extra_cy, radius, status))
+        if status in ("ambiguous", "multi"):
             ambiguous_positions.append(col)
 
     return "".join(result_digits), ambiguous_positions
@@ -318,6 +379,7 @@ def _detect_answer_blocks(
             for strip in range(block.num_columns):
                 ratios = []
                 positions = []
+                raw_positions = []
                 for choice in range(num_choices):
                     if circle_grid is not None:
                         combined_col = strip * num_choices + choice
@@ -336,23 +398,39 @@ def _detect_answer_blocks(
                     ratio, best_cx, best_cy = _best_fill_ratio(gray, cx, cy, radius, search_range, bounds)
                     ratios.append(ratio)
                     positions.append((best_cx, best_cy))
+                    raw_positions.append((cx, cy))
 
-                best_choice, is_ambiguous = _pick_best(ratios)
+                best_choice, status, other_marked = _pick_best(ratios)
                 local_index = strip * rows_per_column + row
                 if best_choice is None:
                     block_answers[local_index] = ""
+                    # Khong doc duoc dap an nao ro rang - van ve 1 vong cam o
+                    # vi tri "toi nhat trong so cac o toi" tren preview, thay
+                    # vi im lang khong ve gi (de nguoi dung de dang thay ngay
+                    # cau nao can xem lai bang mat).
+                    fallback_choice = max(range(len(ratios)), key=lambda i: ratios[i])
+                    fallback_cx, fallback_cy = positions[fallback_choice]
+                    marks.append(CellMark(fallback_cx, fallback_cy, radius, "ambiguous"))
                 else:
                     block_answers[local_index] = chr(ord("A") + best_choice)
                     mark_cx, mark_cy = positions[best_choice]
-                    marks.append(CellMark(mark_cx, mark_cy, radius, is_ambiguous))
-                block_ambiguous[local_index] = is_ambiguous
+                    marks.append(CellMark(mark_cx, mark_cy, radius, status))
+                    # "multi": hoc sinh to nham/to hon 1 dap an cho cung 1 cau -
+                    # ve vong DO cho TAT CA cac o cung ro rang da to, khong chi
+                    # o duoc chon, de nguoi xem thay het cac cho bi to thay vi
+                    # chi thay 1 vong roi tuong nham la doc thieu.
+                    for extra_choice in other_marked:
+                        extra_cx, extra_cy = positions[extra_choice]
+                        marks.append(CellMark(extra_cx, extra_cy, radius, status))
+                block_ambiguous[local_index] = status in ("ambiguous", "multi")
                 ratio_str = ", ".join(
-                    f"{chr(ord('A') + i)}={r:.2f}" for i, r in enumerate(ratios)
+                    f"{chr(ord('A') + i)}={r:.2f}@({raw_positions[i][0]:.0f},{raw_positions[i][1]:.0f})"
+                    for i, r in enumerate(ratios)
                 )
                 chosen = block_answers[local_index] or "(bo trong)"
                 _dbg(
                     f"cau {question_number + local_index}: [{ratio_str}]"
-                    f" -> chon={chosen} ambiguous={is_ambiguous}"
+                    f" -> chon={chosen} status={status}"
                     f" (dung_luoi_o_tron={circle_grid is not None})",
                 )
 
@@ -436,11 +514,14 @@ async def get_saved_detection(sheet_id: str, user_id: str) -> OmrDetectionRespon
 
 
 async def get_or_run_detection(template_id: str, sheet_id: str, user_id: str) -> OmrDetectionResponse:
-    # Dung lai ket qua detect da co san (ke ca ban da sua tay) thay vi chay lai
-    # OpenCV moi lan - tranh viec cham hang loat vo tinh ghi de mat cho sua tay
-    # cua nguoi dung. Muon doc lai tu dau thi goi thang run_detection().
+    # Chi dung lai ket qua da luu neu la ban NGUOI DUNG DA TU SUA tay (is_manual)
+    # - tranh viec cham hang loat vo tinh ghi de mat cong sua tay. Ban DOC TU
+    # DONG thi luon chay lai OpenCV moi lan cham, de luon phan anh dung thuat
+    # toan detect MOI NHAT (thuat toan con dang duoc tinh chinh lien tuc - neu
+    # cu dung cache cu, sua thuat toan xong test lai se van thay ket qua CU,
+    # gay hieu lam la fix khong co tac dung).
     row = await get_detection(sheet_id, user_id)
-    if row is not None:
+    if row is not None and row["is_manual"]:
         return await get_saved_detection(sheet_id, user_id)
     return await run_detection(template_id, sheet_id, user_id)
 
@@ -462,6 +543,7 @@ async def override_detection(
         answers=json.dumps(answers),
         ambiguous_questions=json.dumps([]),
         detected_at=detected_at,
+        is_manual=True,
     )
     return OmrDetectionResponse(
         sheet_id=sheet_id,
@@ -484,8 +566,12 @@ async def render_preview_image(template_id: str, sheet_id: str, user_id: str) ->
 
     _, _, _, _, _, _, marks = _run_detection_core(template, gray)
 
+    # BGR: cam = khong chac (tin cay thap), do = phat hien nhieu hon 1 o duoc
+    # to cho cung 1 cau/cot (nghiem trong hon - can xem lai chac chan), xanh
+    # duong = chac chan.
+    MARK_COLORS = {"ambiguous": (0, 165, 255), "multi": (0, 0, 255), "confident": (255, 140, 0)}
     for mark in marks:
-        color_bgr = (0, 165, 255) if mark.ambiguous else (255, 140, 0)
+        color_bgr = MARK_COLORS.get(mark.status, (255, 140, 0))
         cv2.circle(color, (int(mark.cx), int(mark.cy)), int(mark.radius), color_bgr, 3)
 
     success, buffer = cv2.imencode(".png", color)

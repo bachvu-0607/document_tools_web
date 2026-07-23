@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { checkOmrAlignment, uploadOmrSheet } from "@/lib/api";
 import type { OmrSheetResponse } from "@/types/omr";
 
-const CHECK_INTERVAL_MS = 1000;
+const CHECK_INTERVAL_MS = 400;
 const PREVIEW_INTERVAL_MS = 120;
 // So lan lien tiep phai bao "du 4 goc" truoc khi tu dong chup - tranh chup
 // nham luc may vua rung/luot qua, khong phai do nguoi dung thuc su da canh xong.
@@ -55,6 +55,11 @@ export function OmrCameraCapture({ onCaptured }: OmrCameraCaptureProps) {
   const [capturedCount, setCapturedCount] = useState(0);
   const [lastMessage, setLastMessage] = useState("");
   const [error, setError] = useState("");
+  // Anh vua tu dong chup, CHUA tai len - cho nguoi chup xem lai va bam "Dong
+  // y" truoc khi thuc su dung, tranh truong hop chup xong tai len/cham luon
+  // ma nguoi chup chua kip biet minh vua chup duoc gi.
+  const [pendingCapture, setPendingCapture] = useState<{ blob: Blob; previewUrl: string } | null>(null);
+  const [uploadingCapture, setUploadingCapture] = useState(false);
 
   const streaming = activeStream !== null;
 
@@ -80,6 +85,11 @@ export function OmrCameraCapture({ onCaptured }: OmrCameraCaptureProps) {
     stableCountRef.current = 0;
     waitingForRemovalRef.current = false;
     setWaitingForRemoval(false);
+    busyRef.current = false;
+    setPendingCapture((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
   }
 
   async function refreshDeviceList() {
@@ -107,7 +117,25 @@ export function OmrCameraCapture({ onCaptured }: OmrCameraCaptureProps) {
       const constraints: MediaStreamConstraints = {
         video: deviceId ? { deviceId: { exact: deviceId }, ...resolution } : resolution,
       };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err) {
+        // Mot so camera/trinh duyet tu choi thang ca yeu cau "ideal" - thu lai
+        // voi rang buoc nhe hon (bo ep hinh VUONG 3840x3840, doi sang ty le
+        // 16:9 thuong gap hon) nhung VAN xin do phan giai cao, tranh truong
+        // hop rot xuong "video: true" khong rang buoc gi khien trinh duyet tu
+        // chon muc mac dinh rat thap (anh mo, thieu chi tiet de doc o tron).
+        if (err instanceof OverconstrainedError) {
+          const fallbackResolution = { width: { ideal: 3840 }, height: { ideal: 2160 } };
+          const fallback: MediaStreamConstraints = {
+            video: deviceId ? { deviceId: { exact: deviceId }, ...fallbackResolution } : fallbackResolution,
+          };
+          stream = await navigator.mediaDevices.getUserMedia(fallback);
+        } else {
+          throw err;
+        }
+      }
       streamRef.current = stream;
       setActiveStream(stream);
       setRotation(0);
@@ -186,16 +214,12 @@ export function OmrCameraCapture({ onCaptured }: OmrCameraCaptureProps) {
           !busyRef.current &&
           !waitingForRemovalRef.current
         ) {
+          // busyRef GIU NGUYEN true (vong kiem tra tam dung) cho toi khi
+          // nguoi dung bam "Dong y" hoac "Chup lai" - xem handleConfirmCapture/
+          // handleRetakeCapture, khong tu dong tai len/cham ngay o day nua.
           busyRef.current = true;
           stableCountRef.current = 0;
           await handleAutoCapture(video);
-          // Sau khi chup, KHONG tu chup lai ngay du to giay van con canh
-          // dung trong khung - cho toi khi nguoi dung dua to giay ra (mat
-          // canh chinh) roi dua to tiep theo vao thi moi chup lan nua. Tranh
-          // chup lien tuc nhieu lan cung 1 to giay.
-          waitingForRemovalRef.current = true;
-          setWaitingForRemoval(true);
-          busyRef.current = false;
         }
       }, "image/jpeg", 0.6);
     }, CHECK_INTERVAL_MS);
@@ -211,19 +235,47 @@ export function OmrCameraCapture({ onCaptured }: OmrCameraCaptureProps) {
     const blob: Blob | null = await new Promise((resolve) =>
       fullCanvas.toBlob(resolve, "image/jpeg", 0.92),
     );
-    if (!blob) return;
+    if (!blob) {
+      busyRef.current = false;
+      return;
+    }
+    setPendingCapture({ blob, previewUrl: URL.createObjectURL(blob) });
+  }
 
+  async function handleConfirmCapture() {
+    if (!pendingCapture) return;
+    setUploadingCapture(true);
+    setError("");
     const filename = `camera-${new Date().toISOString().replace(/[:.]/g, "-")}.jpg`;
-    const file = new File([blob], filename, { type: "image/jpeg" });
-
+    const file = new File([pendingCapture.blob], filename, { type: "image/jpeg" });
     try {
       const result = await uploadOmrSheet(file, "");
       setCapturedCount((prev) => prev + 1);
-      setLastMessage(`Đã tự động chụp & tải lên: ${result.label}`);
+      setLastMessage(`Đã tải lên: ${result.label}`);
       onCaptured(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Chụp được nhưng tải lên thất bại");
+      setError(err instanceof Error ? err.message : "Tải ảnh lên thất bại");
+    } finally {
+      setUploadingCapture(false);
+      URL.revokeObjectURL(pendingCapture.previewUrl);
+      setPendingCapture(null);
+      // Sau khi xac nhan, KHONG tu chup lai ngay du to giay van con canh dung
+      // trong khung - cho toi khi nguoi dung dua to giay ra roi dua to tiep
+      // theo vao thi moi chup lan nua. Tranh chup lien tuc nhieu lan cung 1 to.
+      waitingForRemovalRef.current = true;
+      setWaitingForRemoval(true);
+      busyRef.current = false;
     }
+  }
+
+  function handleRetakeCapture() {
+    setPendingCapture((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+    // Khong bat waitingForRemoval - cho phep tu dong chup lai ngay neu giay
+    // van con dang canh dung trong khung, khong bat nguoi dung phai nhac ra.
+    busyRef.current = false;
   }
 
   return (
@@ -237,34 +289,62 @@ export function OmrCameraCapture({ onCaptured }: OmrCameraCaptureProps) {
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video autoPlay className="hidden" muted playsInline ref={videoRef} />
 
-          <div className="relative overflow-hidden rounded-xl bg-black">
-            <canvas className="block w-full" ref={previewCanvasRef} />
-            <div
-              className={`pointer-events-none absolute inset-6 rounded-xl border-4 transition-colors ${
-                waitingForRemoval ? "border-sky-400" : aligned ? "border-emerald-400" : "border-white/70"
-              }`}
-            />
-            <p
-              className={`absolute left-1/2 top-3 -translate-x-1/2 rounded-full px-3 py-1 text-xs font-medium text-white ${
-                waitingForRemoval ? "bg-sky-600" : aligned ? "bg-emerald-600" : "bg-black/60"
-              }`}
-            >
-              {waitingForRemoval
-                ? "Đã chụp — nhấc phiếu ra rồi đặt phiếu tiếp theo vào"
-                : aligned
-                  ? "Đã canh đúng — chuẩn bị chụp..."
-                  : "Di chuyển máy để khớp 4 góc phiếu vào khung"}
-            </p>
-          </div>
+          {pendingCapture ? (
+            <div className="grid gap-3">
+              <div className="relative overflow-hidden rounded-xl bg-black">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img alt="Ảnh vừa chụp — xem lại trước khi dùng" className="block w-full" src={pendingCapture.previewUrl} />
+                <p className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white">
+                  Kiểm tra ảnh — rõ nét, đủ 4 góc chưa?
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  className="!min-h-11"
+                  disabled={uploadingCapture}
+                  onClick={handleRetakeCapture}
+                  type="button"
+                  variant="secondary"
+                >
+                  🔄 Chụp lại
+                </Button>
+                <Button className="!min-h-11" loading={uploadingCapture} onClick={() => void handleConfirmCapture()} type="button">
+                  ✅ Đồng ý — dùng ảnh này
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="relative overflow-hidden rounded-xl bg-black">
+                <canvas className="block w-full" ref={previewCanvasRef} />
+                <div
+                  className={`pointer-events-none absolute inset-6 rounded-xl border-4 transition-colors ${
+                    waitingForRemoval ? "border-sky-400" : aligned ? "border-emerald-400" : "border-white/70"
+                  }`}
+                />
+                <p
+                  className={`absolute left-1/2 top-3 -translate-x-1/2 rounded-full px-3 py-1 text-xs font-medium text-white ${
+                    waitingForRemoval ? "bg-sky-600" : aligned ? "bg-emerald-600" : "bg-black/60"
+                  }`}
+                >
+                  {waitingForRemoval
+                    ? "Đã chụp — nhấc phiếu ra rồi đặt phiếu tiếp theo vào"
+                    : aligned
+                      ? "Đã canh đúng — chuẩn bị chụp..."
+                      : "Di chuyển máy để khớp 4 góc phiếu vào khung"}
+                </p>
+              </div>
 
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Nếu ảnh xem trước bị nghiêng/nằm ngang sai chiều, bấm xoay tới khi thấy đúng chiều đọc.
-            </p>
-            <Button className="!min-h-9 !px-3 !text-xs shrink-0" onClick={rotate90} type="button" variant="secondary">
-              ⟳ Xoay 90° ({rotation}°)
-            </Button>
-          </div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Nếu ảnh xem trước bị nghiêng/nằm ngang sai chiều, bấm xoay tới khi thấy đúng chiều đọc.
+                </p>
+                <Button className="!min-h-9 !px-3 !text-xs shrink-0" onClick={rotate90} type="button" variant="secondary">
+                  ⟳ Xoay 90° ({rotation}°)
+                </Button>
+              </div>
+            </>
+          )}
 
           <div className="flex items-end gap-2">
             <label className="grid flex-1 gap-1 text-xs font-medium">
