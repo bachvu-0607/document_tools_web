@@ -1,6 +1,7 @@
 import datetime
 import json
 from dataclasses import dataclass
+from typing import Literal
 
 import cv2
 import numpy as np
@@ -11,6 +12,13 @@ from app.schemas.omr import AnswerBlock, OmrDetectionResponse, OmrTemplateRespon
 from app.services.omr_align_service import align_image_with_template, decode_image_exif_aware
 from app.services.omr_storage import get_omr_sheet_file
 from app.services.omr_template_service import get_omr_template
+
+# "confident" = chac chan (xanh), "ambiguous" = 1 o duoc chon nhung tin cay
+# chua cao (cam), "multi" = phat hien >=2 o CUNG TU no da du dam de tinh la
+# da to (do), "blank" = khong co dau hieu gi (bo trong that su). Khai bao 1
+# noi duy nhat (thay vi chuoi tu do rai rac o nhieu cho) de type checker bat
+# duoc ngay neu go nham/quen 1 truong hop khi them trang thai moi sau nay.
+DetectStatus = Literal["confident", "ambiguous", "multi", "blank"]
 
 # === NGUONG THICH UNG (thay cho hang so co dinh) ===
 # Van de cua hang so co dinh: "tran tin hieu" (do dam toi da 1 o TO THAT co
@@ -94,6 +102,8 @@ def _adaptive_thresholds(
     typical_baseline = float(np.median(baselines)) if baselines else 0.0
     baseline_floor = typical_baseline - BASELINE_CLAMP_FRACTION * signal_ceiling
     return min_fill, ambiguous_margin, multi_mark, baseline_floor
+
+
 # Anh chup thuc te thuong bi nghieng/lech nhe (khong vuong goc 100%), nen toa
 # do tinh theo % thuan tuy se le dan cang xa diem goc. Thay vi tin chac vao 1
 # toa do co dinh, do them 1 vung nho quanh vi tri du kien va lay diem dam nhat
@@ -117,11 +127,7 @@ class CellMark:
     cx: float
     cy: float
     radius: float
-    # "confident" = chac chan (xanh), "ambiguous" = 1 o duoc chon nhung tin
-    # cay chua cao (cam), "multi" = PHAT HIEN >=2 o CUNG TU no da du dam de
-    # tinh la da to (do) - khac hang voi "ambiguous": khong phai tin cay thap,
-    # ma la ro rang co nhieu hon 1 dap an duoc to cho cung 1 cau.
-    status: str
+    status: DetectStatus
 
 
 async def _load_images(sheet_bytes: bytes, template_id: str) -> tuple[np.ndarray, np.ndarray, bool]:
@@ -144,7 +150,6 @@ async def _load_images(sheet_bytes: bytes, template_id: str) -> tuple[np.ndarray
 
 def _zone_to_px(zone: ZoneRect, img_w: int, img_h: int) -> tuple[float, float, float, float]:
     return zone.x0 * img_w, zone.y0 * img_h, zone.x1 * img_w, zone.y1 * img_h
-
 
 
 # Chi lay 70% ban kinh o giua tam - o that in san 1 vong tron VIEN DEN, vien
@@ -310,7 +315,7 @@ def _pick_best(
     ambiguous_margin: float,
     multi_mark_min_ratio: float,
     baseline_floor: float = float("-inf"),
-) -> tuple[int | None, str, list[int]]:
+) -> tuple[int | None, DetectStatus, list[int]]:
     # Tra ve (chi so o duoc chon, trang thai, danh sach cac o KHAC cung TU NO
     # DA DU DAM de tinh la da to - khong phai chi vi gan bang o duoc chon).
     # Trang thai: "blank" (khong chenh lech gi - xem NEAR_ZERO_SIGNAL), "multi"
@@ -350,6 +355,38 @@ def _pick_best(
     return best_index, "confident", []
 
 
+def _decide_and_mark(
+    ratios: list[float],
+    positions: list[tuple[float, float]],
+    radius: float,
+    thresholds: tuple[float, float, float, float],
+    marks: list[CellMark],
+) -> tuple[int | None, DetectStatus]:
+    # Goi _pick_best roi tu dong ve CellMark tuong ung (ke ca vong cam fallback
+    # khi bo trong) - dung CHUNG cho luoi so (SBD/Ma de) va khoi dap an trac
+    # nghiem, tranh lap lai y het doan nay o ca 2 noi (truoc day tach rieng).
+    min_fill_ratio, ambiguous_margin, multi_mark_min_ratio, baseline_floor = thresholds
+    best_index, status, other_marked = _pick_best(
+        ratios, min_fill_ratio, ambiguous_margin, multi_mark_min_ratio, baseline_floor,
+    )
+    if best_index is None:
+        # Khong doc duoc gi ro rang - VAN ve 1 vong cam o vi tri "toi nhat
+        # trong so cac o toi" tren preview, thay vi im lang khong ve gi (de
+        # nguoi dung de dang thay ngay cho nao can xem lai bang mat).
+        fallback = max(range(len(ratios)), key=lambda i: ratios[i])
+        fx, fy = positions[fallback]
+        marks.append(CellMark(fx, fy, radius, "ambiguous"))
+    else:
+        mx, my = positions[best_index]
+        marks.append(CellMark(mx, my, radius, status))
+        # "multi": ve vong DO cho TAT CA cac o cung ro rang da to, khong chi
+        # o duoc chon, de nguoi xem thay het cac cho bi to.
+        for extra in other_marked:
+            ex, ey = positions[extra]
+            marks.append(CellMark(ex, ey, radius, status))
+    return best_index, status
+
+
 def _detect_digit_grid(
     gray: np.ndarray, zone: ZoneRect, digits: int, img_w: int, img_h: int, marks: list[CellMark], label: str = "",
 ) -> tuple[str, list[int]]:
@@ -386,36 +423,17 @@ def _detect_digit_grid(
             positions.append((best_cx, best_cy))
         columns_data.append((ratios, positions))
 
-    min_fill_ratio, ambiguous_margin, multi_mark_min_ratio, baseline_floor = _adaptive_thresholds(
-        [ratios for ratios, _ in columns_data], radius,
-    )
+    thresholds = _adaptive_thresholds([ratios for ratios, _ in columns_data], radius)
     _dbg(
-        f"khoi {label or 'so'}: nguong thich ung min_fill={min_fill_ratio:.2f}"
-        f" ambiguous_margin={ambiguous_margin:.2f} multi_mark={multi_mark_min_ratio:.2f}"
-        f" baseline_floor={baseline_floor:.2f} (radius={radius:.0f}px)",
+        f"khoi {label or 'so'}: nguong thich ung min_fill={thresholds[0]:.2f}"
+        f" ambiguous_margin={thresholds[1]:.2f} multi_mark={thresholds[2]:.2f}"
+        f" baseline_floor={thresholds[3]:.2f} (radius={radius:.0f}px)",
     )
 
     # Vong 2 - da biet nguong thich ung, quyet dinh tung cot.
     for col, (ratios, positions) in enumerate(columns_data):
-        best_row, status, other_marked = _pick_best(
-            ratios, min_fill_ratio, ambiguous_margin, multi_mark_min_ratio, baseline_floor,
-        )
-        if best_row is None:
-            result_digits.append("?")
-            # Khong doc duoc so nao ro rang - VAN ve 1 vong cam o vi tri "toi
-            # nhat trong so cac o toi" tren preview, thay vi im lang khong ve
-            # gi (de nguoi dung de dang thay ngay cot nao can xem lai bang mat,
-            # khong bi lam tuong la "chac chan khong co gi o day").
-            fallback_row = max(range(len(ratios)), key=lambda i: ratios[i])
-            fallback_cx, fallback_cy = positions[fallback_row]
-            marks.append(CellMark(fallback_cx, fallback_cy, radius, "ambiguous"))
-        else:
-            result_digits.append(str(best_row))
-            mark_cx, mark_cy = positions[best_row]
-            marks.append(CellMark(mark_cx, mark_cy, radius, status))
-            for extra_row in other_marked:
-                extra_cx, extra_cy = positions[extra_row]
-                marks.append(CellMark(extra_cx, extra_cy, radius, status))
+        best_row, status = _decide_and_mark(ratios, positions, radius, thresholds, marks)
+        result_digits.append(str(best_row) if best_row is not None else "?")
         if status in ("ambiguous", "multi"):
             ambiguous_positions.append(col)
         ratio_str = ", ".join(f"{r:.2f}" for r in ratios)
@@ -484,41 +502,18 @@ def _detect_answer_blocks(
                 local_index = strip * rows_per_column + row
                 cells_data.append((ratios, positions, raw_positions, local_index))
 
-        min_fill_ratio, ambiguous_margin, multi_mark_min_ratio, baseline_floor = _adaptive_thresholds(
-            [ratios for ratios, _, _, _ in cells_data], radius,
-        )
+        thresholds = _adaptive_thresholds([ratios for ratios, _, _, _ in cells_data], radius)
         _dbg(
             f"khoi cau {question_number}-{question_number + block.num_questions - 1}:"
-            f" nguong thich ung min_fill={min_fill_ratio:.2f}"
-            f" ambiguous_margin={ambiguous_margin:.2f} multi_mark={multi_mark_min_ratio:.2f}"
-            f" baseline_floor={baseline_floor:.2f} (radius={radius:.0f}px)",
+            f" nguong thich ung min_fill={thresholds[0]:.2f}"
+            f" ambiguous_margin={thresholds[1]:.2f} multi_mark={thresholds[2]:.2f}"
+            f" baseline_floor={thresholds[3]:.2f} (radius={radius:.0f}px)",
         )
 
         # Vong 2 - da biet nguong thich ung cua khoi nay, quyet dinh tung cau.
         for ratios, positions, raw_positions, local_index in cells_data:
-            best_choice, status, other_marked = _pick_best(
-                ratios, min_fill_ratio, ambiguous_margin, multi_mark_min_ratio, baseline_floor,
-            )
-            if best_choice is None:
-                block_answers[local_index] = ""
-                # Khong doc duoc dap an nao ro rang - van ve 1 vong cam o
-                # vi tri "toi nhat trong so cac o toi" tren preview, thay
-                # vi im lang khong ve gi (de nguoi dung de dang thay ngay
-                # cau nao can xem lai bang mat).
-                fallback_choice = max(range(len(ratios)), key=lambda i: ratios[i])
-                fallback_cx, fallback_cy = positions[fallback_choice]
-                marks.append(CellMark(fallback_cx, fallback_cy, radius, "ambiguous"))
-            else:
-                block_answers[local_index] = chr(ord("A") + best_choice)
-                mark_cx, mark_cy = positions[best_choice]
-                marks.append(CellMark(mark_cx, mark_cy, radius, status))
-                # "multi": hoc sinh to nham/to hon 1 dap an cho cung 1 cau -
-                # ve vong DO cho TAT CA cac o cung ro rang da to, khong chi
-                # o duoc chon, de nguoi xem thay het cac cho bi to thay vi
-                # chi thay 1 vong roi tuong nham la doc thieu.
-                for extra_choice in other_marked:
-                    extra_cx, extra_cy = positions[extra_choice]
-                    marks.append(CellMark(extra_cx, extra_cy, radius, status))
+            best_choice, status = _decide_and_mark(ratios, positions, radius, thresholds, marks)
+            block_answers[local_index] = chr(ord("A") + best_choice) if best_choice is not None else ""
             block_ambiguous[local_index] = status in ("ambiguous", "multi")
             ratio_str = ", ".join(
                 f"{chr(ord('A') + i)}={r:.2f}@({raw_positions[i][0]:.0f},{raw_positions[i][1]:.0f})"
