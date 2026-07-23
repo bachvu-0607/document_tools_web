@@ -51,14 +51,25 @@ NOISE_FLOOR_CONST = 0.5
 # do phan giai nhu 3 nguong tren, vi no dai dien cho "khong co gi ca" thay vi
 # "chua du tin cay".
 NEAR_ZERO_SIGNAL = 0.02
+# Neu baseline (o "sang nhat" - it toi nhat) cua RIENG 1 cau thap hon han so
+# voi muc nen binh thuong ca khoi (vd bong tay/ngon tay che lech dung 1 hang,
+# lam 1 o vo tinh sang bat thuong so voi 3 o con lai CUNG cau), GHIM baseline
+# cau do lai gan muc binh thuong thay vi tin tuyet doi vao chinh no - neu
+# khong, mot baseline qua thap se "bom phong" gia tao ca 4 lua chon trong cau
+# do, de gay bao nham "to nhieu dap an" (thuc te da gap: 1 cau chi to A, o B
+# sang hon binh thuong ~0.17 so voi cac cau xung quanh, bi bao nham la "multi").
+BASELINE_CLAMP_FRACTION = 0.5
 
 
-def _adaptive_thresholds(ratio_groups: list[list[float]], radius: float) -> tuple[float, float, float]:
+def _adaptive_thresholds(
+    ratio_groups: list[list[float]], radius: float,
+) -> tuple[float, float, float, float]:
     # Tinh 3 nguong (min_fill, ambiguous_margin, multi_mark) THICH UNG cho 1
     # KHOI (vd het cau SBD, het 1 khoi dap an) dua tren tran tin hieu THAT do
-    # duoc tren chinh khoi do va do phan giai (ban kinh pixel). Xem giai thich
-    # chi tiet o dau file.
-    winners = [max(ratios) - min(ratios) for ratios in ratio_groups]
+    # duoc tren chinh khoi do va do phan giai (ban kinh pixel), cong voi
+    # baseline_floor de ghim baseline cau le. Xem giai thich chi tiet o dau file.
+    baselines = [min(ratios) for ratios in ratio_groups]
+    winners = [max(ratios) - b for ratios, b in zip(ratio_groups, baselines)]
     signal_ceiling = max(float(np.percentile(winners, CEILING_PERCENTILE)), MIN_SIGNAL_CEILING) if winners else MIN_SIGNAL_CEILING
 
     min_fill = MIN_FILL_FRACTION * signal_ceiling
@@ -70,7 +81,10 @@ def _adaptive_thresholds(ratio_groups: list[list[float]], radius: float) -> tupl
     # chan" - khong tao ra canh bao sai nghiem trong nhu "to nham dap an".
     noise_floor = NOISE_FLOOR_CONST / (radius ** 0.5) if radius > 0 else MIN_SIGNAL_CEILING
     multi_mark = max(MULTI_MARK_FRACTION * signal_ceiling, noise_floor)
-    return min_fill, ambiguous_margin, multi_mark
+
+    typical_baseline = float(np.median(baselines)) if baselines else 0.0
+    baseline_floor = typical_baseline - BASELINE_CLAMP_FRACTION * signal_ceiling
+    return min_fill, ambiguous_margin, multi_mark, baseline_floor
 # Anh chup thuc te thuong bi nghieng/lech nhe (khong vuong goc 100%), nen toa
 # do tinh theo % thuan tuy se le dan cang xa diem goc. Thay vi tin chac vao 1
 # toa do co dinh, do them 1 vung nho quanh vi tri du kien va lay diem dam nhat
@@ -282,7 +296,11 @@ def _find_circle_grid(
 
 
 def _pick_best(
-    ratios: list[float], min_fill_ratio: float, ambiguous_margin: float, multi_mark_min_ratio: float,
+    ratios: list[float],
+    min_fill_ratio: float,
+    ambiguous_margin: float,
+    multi_mark_min_ratio: float,
+    baseline_floor: float = float("-inf"),
 ) -> tuple[int | None, str, list[int]]:
     # Tra ve (chi so o duoc chon, trang thai, danh sach cac o KHAC cung TU NO
     # DA DU DAM de tinh la da to - khong phai chi vi gan bang o duoc chon).
@@ -301,7 +319,12 @@ def _pick_best(
     # thuc te: ca 4 lua chon cung cau doc ra ~1.00 dai gan nhu bang nhau, du
     # chi 1 o duoc to that). Tru baseline nay di se giu lai dung phan chenh
     # lech do MUC THUC gay ra, bat ke vung do sang hay toi.
-    baseline = min(ratios)
+    #
+    # baseline_floor (tu _adaptive_thresholds): ghim baseline khong duoc thap
+    # hon muc binh thuong ca khoi - phong truong hop RIENG cau nay bi bong che
+    # lam 1 o sang bat thuong, "bom phong" gia tao ca cau (xem giai thich o
+    # BASELINE_CLAMP_FRACTION).
+    baseline = max(min(ratios), baseline_floor)
     adjusted = [r - baseline for r in ratios]
     ranked = sorted(range(len(adjusted)), key=lambda i: adjusted[i], reverse=True)
     best_index = ranked[0]
@@ -354,18 +377,20 @@ def _detect_digit_grid(
             positions.append((best_cx, best_cy))
         columns_data.append((ratios, positions))
 
-    min_fill_ratio, ambiguous_margin, multi_mark_min_ratio = _adaptive_thresholds(
+    min_fill_ratio, ambiguous_margin, multi_mark_min_ratio, baseline_floor = _adaptive_thresholds(
         [ratios for ratios, _ in columns_data], radius,
     )
     _dbg(
         f"khoi {label or 'so'}: nguong thich ung min_fill={min_fill_ratio:.2f}"
         f" ambiguous_margin={ambiguous_margin:.2f} multi_mark={multi_mark_min_ratio:.2f}"
-        f" (radius={radius:.0f}px)",
+        f" baseline_floor={baseline_floor:.2f} (radius={radius:.0f}px)",
     )
 
     # Vong 2 - da biet nguong thich ung, quyet dinh tung cot.
     for col, (ratios, positions) in enumerate(columns_data):
-        best_row, status, other_marked = _pick_best(ratios, min_fill_ratio, ambiguous_margin, multi_mark_min_ratio)
+        best_row, status, other_marked = _pick_best(
+            ratios, min_fill_ratio, ambiguous_margin, multi_mark_min_ratio, baseline_floor,
+        )
         if best_row is None:
             result_digits.append("?")
             # Khong doc duoc so nao ro rang - VAN ve 1 vong cam o vi tri "toi
@@ -450,20 +475,20 @@ def _detect_answer_blocks(
                 local_index = strip * rows_per_column + row
                 cells_data.append((ratios, positions, raw_positions, local_index))
 
-        min_fill_ratio, ambiguous_margin, multi_mark_min_ratio = _adaptive_thresholds(
+        min_fill_ratio, ambiguous_margin, multi_mark_min_ratio, baseline_floor = _adaptive_thresholds(
             [ratios for ratios, _, _, _ in cells_data], radius,
         )
         _dbg(
             f"khoi cau {question_number}-{question_number + block.num_questions - 1}:"
             f" nguong thich ung min_fill={min_fill_ratio:.2f}"
             f" ambiguous_margin={ambiguous_margin:.2f} multi_mark={multi_mark_min_ratio:.2f}"
-            f" (radius={radius:.0f}px)",
+            f" baseline_floor={baseline_floor:.2f} (radius={radius:.0f}px)",
         )
 
         # Vong 2 - da biet nguong thich ung cua khoi nay, quyet dinh tung cau.
         for ratios, positions, raw_positions, local_index in cells_data:
             best_choice, status, other_marked = _pick_best(
-                ratios, min_fill_ratio, ambiguous_margin, multi_mark_min_ratio,
+                ratios, min_fill_ratio, ambiguous_margin, multi_mark_min_ratio, baseline_floor,
             )
             if best_choice is None:
                 block_answers[local_index] = ""
