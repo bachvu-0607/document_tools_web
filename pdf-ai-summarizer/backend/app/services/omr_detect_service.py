@@ -26,6 +26,16 @@ AMBIGUOUS_MARGIN = 0.15
 SEARCH_STEPS = 3
 SEARCH_RANGE_RATIO = 0.35
 
+# Log chan doan tam thoi - xem tung cau dang tinh ty le "to" the nao, va co
+# dang dung luoi o tron THAT do duoc hay bi lui ve cach chia deu (kem chinh
+# xac hon). Hien trong Railway Deploy Logs.
+DEBUG_DETECT = True
+
+
+def _dbg(*args) -> None:
+    if DEBUG_DETECT:
+        print("[OMR-DETECT-DEBUG]", *args, flush=True)
+
 
 @dataclass
 class CellMark:
@@ -106,7 +116,9 @@ def _find_circle_grid(
     x0, y0, x1, y1 = int(px0), int(py0), int(px1), int(py1)
     crop = gray[max(0, y0):y1, max(0, x0):x1]
     h, w = crop.shape[:2]
+    _dbg(f"_find_circle_grid: vung {w}x{h}px, ky vong {n_rows}x{n_cols}={n_rows*n_cols} o")
     if h < 10 or w < 10:
+        _dbg("  -> vung qua nho, bo qua luoi o tron")
         return None
 
     approx_cell_w = w / n_cols
@@ -122,6 +134,7 @@ def _find_circle_grid(
         param1=50, param2=25, minRadius=min_radius, maxRadius=max_radius,
     )
     if circles is None:
+        _dbg("  -> HoughCircles khong tim thay vong tron nao, LUI VE cach chia deu")
         return None
 
     raw_points = [(float(cx) + x0, float(cy) + y0) for cx, cy, _ in circles[0]]
@@ -136,7 +149,9 @@ def _find_circle_grid(
             points.append(point)
 
     expected_count = n_rows * n_cols
+    _dbg(f"  Hough tim {len(raw_points)} vong tron tho, sau gop trung con {len(points)} (ky vong {expected_count})")
     if not (expected_count * 0.85 <= len(points) <= expected_count * 1.15):
+        _dbg("  -> so luong vong tron lech qua nhieu so voi ky vong, LUI VE cach chia deu")
         return None
 
     # Gom hang/cot bang K-means (chia dung K cum) thay vi noi chuoi theo
@@ -154,6 +169,7 @@ def _find_circle_grid(
         return [rank_of_label[int(label)] for label in labels.flatten()], sorted_centers
 
     if len(set(points)) < max(n_rows, n_cols):
+        _dbg("  -> qua it diem phan biet, LUI VE cach chia deu")
         return None
 
     row_labels, row_centers = _cluster_1d([p[1] for p in points], n_rows)
@@ -175,8 +191,10 @@ def _find_circle_grid(
             grid[row_label][col_label] = point
 
     if any(cell is None for row in grid for cell in row):
+        _dbg("  -> co o trong luoi khong ghep duoc diem nao, LUI VE cach chia deu")
         return None
 
+    _dbg("  -> DUNG luoi o tron THAT (khong lui ve chia deu)")
     return grid  # type: ignore[return-value]
 
 
@@ -300,6 +318,15 @@ def _detect_answer_blocks(
                     mark_cx, mark_cy = positions[best_choice]
                     marks.append(CellMark(mark_cx, mark_cy, radius, is_ambiguous))
                 block_ambiguous[local_index] = is_ambiguous
+                ratio_str = ", ".join(
+                    f"{chr(ord('A') + i)}={r:.2f}" for i, r in enumerate(ratios)
+                )
+                chosen = block_answers[local_index] or "(bo trong)"
+                _dbg(
+                    f"cau {question_number + local_index}: [{ratio_str}]"
+                    f" -> chon={chosen} ambiguous={is_ambiguous}"
+                    f" (dung_luoi_o_tron={circle_grid is not None})",
+                )
 
         for local_index in range(block.num_questions):
             answers.append(block_answers[local_index])
