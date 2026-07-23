@@ -201,11 +201,21 @@ def _find_circle_grid(
 def _pick_best(ratios: list[float]) -> tuple[int | None, bool]:
     # Tra ve (chi so o duoc chon, co phai "to mo/to doi" khong). Chi so None
     # nghia la bo trong (khong o nao vuot nguong toi thieu).
-    ranked = sorted(range(len(ratios)), key=lambda i: ratios[i], reverse=True)
+    #
+    # Tru di ty le THAP NHAT trong nhom truoc khi so nguong: cac o trong 1
+    # nhom (vd 4 lua chon A-D cung 1 cau) nam sat nhau nen chiu chung 1 dieu
+    # kien anh sang - neu vung giay bi bong rop/toi hon, TAT CA cac o (ke ca o
+    # trong) cung bi day ty le "toi" len deu nhau (tung thay tren anh chup
+    # thuc te: ca 4 lua chon cung cau doc ra ~1.00 dai gan nhu bang nhau, du
+    # chi 1 o duoc to that). Tru baseline nay di se giu lai dung phan chenh
+    # lech do MUC THUC gay ra, bat ke vung do sang hay toi.
+    baseline = min(ratios)
+    adjusted = [r - baseline for r in ratios]
+    ranked = sorted(range(len(adjusted)), key=lambda i: adjusted[i], reverse=True)
     best_index = ranked[0]
-    if ratios[best_index] < MIN_FILL_RATIO:
+    if adjusted[best_index] < MIN_FILL_RATIO:
         return None, False
-    if len(ranked) > 1 and ratios[best_index] - ratios[ranked[1]] < AMBIGUOUS_MARGIN:
+    if len(ranked) > 1 and adjusted[best_index] - adjusted[ranked[1]] < AMBIGUOUS_MARGIN:
         return best_index, True
     return best_index, False
 
