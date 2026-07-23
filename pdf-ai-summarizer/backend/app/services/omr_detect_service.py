@@ -81,6 +81,15 @@ def _adaptive_thresholds(
     # chan" - khong tao ra canh bao sai nghiem trong nhu "to nham dap an".
     noise_floor = NOISE_FLOOR_CONST / (radius ** 0.5) if radius > 0 else MIN_SIGNAL_CEILING
     multi_mark = max(MULTI_MARK_FRACTION * signal_ceiling, noise_floor)
+    # He so theo SO LUONG UNG VIEN trong 1 nhom (vd 10 cho SBD/Ma de, 4 cho
+    # 1 cau trac nghiem A-D) - nhom cang dong thi cang de co it nhat 1 ung
+    # vien tinh co vuot nguong do nhieu/gradient anh sang (thay tren du lieu
+    # that: ca dai 7/10 o SBD doc gia tri gan bang nhau do bong do dan theo
+    # hang, khong phai 1 o le - baseline_floor khong sua duoc vi ca khoi deu
+    # bi anh huong). Chuan hoa ve nhom 4 ung vien (dap an trac nghiem, truong
+    # hop da kiem chung thuc te la "to that").
+    group_size = len(ratio_groups[0]) if ratio_groups else 4
+    multi_mark *= (group_size / 4) ** 0.5
 
     typical_baseline = float(np.median(baselines)) if baselines else 0.0
     baseline_floor = typical_baseline - BASELINE_CLAMP_FRACTION * signal_ceiling
