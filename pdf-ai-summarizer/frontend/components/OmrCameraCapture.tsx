@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/Button";
 import { checkOmrAlignment, uploadOmrSheet } from "@/lib/api";
 import type { OmrSheetResponse } from "@/types/omr";
 
-const CHECK_INTERVAL_MS = 400;
+const CHECK_INTERVAL_MS = 300;
 const PREVIEW_INTERVAL_MS = 120;
-// So lan lien tiep phai bao "du 4 goc" truoc khi tu dong chup - tranh chup
-// nham luc may vua rung/luot qua, khong phai do nguoi dung thuc su da canh xong.
-const STABLE_CHECKS_REQUIRED = 2;
+// Chi can 1 lan bao "du 4 goc" la chup ngay - da co man hinh xac nhan (xem
+// pendingCapture ben duoi) de nguoi dung tu kiem tra/chup lai neu anh bi rung/
+// mo, nen khong can giu yen nhieu lan lien tiep truoc khi chup nhu truoc nua.
+const STABLE_CHECKS_REQUIRED = 1;
 
 type Rotation = 0 | 90 | 180 | 270;
 
