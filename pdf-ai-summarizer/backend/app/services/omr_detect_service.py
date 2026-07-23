@@ -67,15 +67,33 @@ def _zone_to_px(zone: ZoneRect, img_w: int, img_h: int) -> tuple[float, float, f
     return zone.x0 * img_w, zone.y0 * img_h, zone.x1 * img_w, zone.y1 * img_h
 
 
+
+# Chi lay 70% ban kinh o giua tam - o that in san 1 vong tron VIEN DEN, vien
+# nay nam sat mep ban kinh uoc luong nen 1 khung VUONG bao quanh chac chan se
+# dinh phai vien o CA 4 CANH (khong chi 4 goc) - moi o, du co to hay khong,
+# deu bi tinh mot phan "toi" co dinh tu chinh cai vien in san do (thay tren du
+# lieu that: o TRONG cung doc ra ~0.20 "toi" thay vi gan 0, va co vung con bi
+# day sat 1.00 het ca 4 lua chon). Thu hep xuong 1 HINH TRON nho nam han vao
+# trong long o, tranh dung phai vien in san, chi con do dung phan giay TRANG
+# hay bi to den ben trong.
+_SAMPLE_RADIUS_FACTOR = 0.7
+
+
 def _fill_ratio(gray: np.ndarray, cx: float, cy: float, radius: float) -> float:
-    x0, y0 = int(cx - radius), int(cy - radius)
-    x1, y1 = int(cx + radius), int(cy + radius)
+    inner_radius = radius * _SAMPLE_RADIUS_FACTOR
+    x0, y0 = int(cx - inner_radius), int(cy - inner_radius)
+    x1, y1 = int(cx + inner_radius), int(cy + inner_radius)
     x0, y0 = max(0, x0), max(0, y0)
     x1, y1 = min(gray.shape[1], x1), min(gray.shape[0], y1)
     if x1 <= x0 or y1 <= y0:
         return 0.0
     patch = gray[y0:y1, x0:x1]
-    return float(np.count_nonzero(patch < 150)) / patch.size
+    yy, xx = np.mgrid[y0:y1, x0:x1]
+    mask = (xx - cx) ** 2 + (yy - cy) ** 2 <= inner_radius ** 2
+    mask_count = int(np.count_nonzero(mask))
+    if mask_count == 0:
+        return 0.0
+    return float(np.count_nonzero((patch < 150) & mask)) / mask_count
 
 
 def _best_fill_ratio(
