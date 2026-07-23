@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from app.core.omr_database import get_detection, get_template_marker_layout, save_detection_record
 from app.schemas.omr import AnswerBlock, OmrDetectionResponse, OmrTemplateResponse, ZoneRect
-from app.services.omr_align_service import align_image_with_template
+from app.services.omr_align_service import align_image_with_template, decode_image_exif_aware
 from app.services.omr_storage import get_omr_sheet_file
 from app.services.omr_template_service import get_omr_template
 
@@ -36,8 +36,7 @@ class CellMark:
 
 
 async def _load_images(sheet_bytes: bytes, template_id: str) -> tuple[np.ndarray, np.ndarray, bool]:
-    array = np.frombuffer(sheet_bytes, dtype=np.uint8)
-    color = cv2.imdecode(array, cv2.IMREAD_COLOR)
+    color = decode_image_exif_aware(sheet_bytes)
     if color is None:
         raise HTTPException(status_code=400, detail="Khong doc duoc anh phieu")
     # Nan thang theo 4 dau goc den TRUOC khi doc luoi. Neu mau phieu nay da co

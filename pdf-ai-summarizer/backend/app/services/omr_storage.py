@@ -16,7 +16,7 @@ from app.core.omr_database import (
     save_sheet_record,
 )
 from app.schemas.omr import OmrSheetResponse
-from app.services.omr_align_service import align_image
+from app.services.omr_align_service import align_image, decode_image_exif_aware
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 EXT_TO_CONTENT_TYPE = {
@@ -123,8 +123,7 @@ async def get_omr_sheet_aligned_bytes(sheet_id: str, user_id: str) -> tuple[byte
     # du 4 dau goc) - dung LAM CHUAN cho ca man hinh khoanh vung mau lan buoc
     # detect that, de 2 ben luon cung 1 he toa do %, khong bi lech nhau.
     file_bytes, _ = await get_omr_sheet_file(sheet_id, user_id)
-    array = np.frombuffer(file_bytes, dtype=np.uint8)
-    color = cv2.imdecode(array, cv2.IMREAD_COLOR)
+    color = decode_image_exif_aware(file_bytes)
     if color is None:
         raise HTTPException(status_code=400, detail="Khong doc duoc anh phieu")
 

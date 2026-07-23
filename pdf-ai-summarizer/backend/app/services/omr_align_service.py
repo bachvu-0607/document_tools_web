@@ -1,5 +1,8 @@
+import io
+
 import cv2
 import numpy as np
+from PIL import Image, ImageOps
 
 # Nguong loc "o vuong den" lam dau moc goc trang - dua tren kich thuoc THUC TE
 # do duoc tren anh mau (khoang 0.0002-0.0005 dien tich anh), chua bien do rong
@@ -44,6 +47,29 @@ DEBUG_ALIGNMENT = True
 def _dbg(*args) -> None:
     if DEBUG_ALIGNMENT:
         print("[OMR-ALIGN-DEBUG]", *args, flush=True)
+
+
+def decode_image_exif_aware(image_bytes: bytes) -> np.ndarray | None:
+    # Anh chup tu dien thoai thuong kem theo the EXIF "Orientation" - Photos/
+    # trinh duyet tu doc the do va XOAY ANH LUC HIEN THI cho nguoi dung xem
+    # dung chieu, nhung DU LIEU DIEM ANH GOC luu trong file van giu nguyen
+    # CHUA xoay. cv2.imdecode() doc thang du lieu tho, bo qua hoan toan the
+    # EXIF nay - khien thuat toan "nhin" anh o 1 huong khac han so voi nguoi
+    # dung dang thay tren man hinh (vd nua tren theo mat nguoi lai nam o 1
+    # canh ben trong du lieu tho) - day chinh la nguyen nhan cac lan "bat
+    # nham goc" du anh nhin bang mat hoan toan binh thuong, du duoc canh
+    # chuan. Dung Pillow doc + ImageOps.exif_transpose() de xoay dung truoc
+    # (ham nay tu doc the EXIF va xoay/lat anh cho khop, roi xoa the di), roi
+    # moi doi sang mang OpenCV (BGR) de xu ly tiep nhu cu.
+    try:
+        pil_image = Image.open(io.BytesIO(image_bytes))
+        pil_image = ImageOps.exif_transpose(pil_image)
+        if pil_image is None:
+            return None
+        rgb_array = np.array(pil_image.convert("RGB"))
+        return cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR)
+    except Exception:
+        return None
 
 
 # Anh sang/do phoi sang khac nhau giua cac lan chup khien 1 nguong co dinh
@@ -160,8 +186,7 @@ def _pick_outer_corners(candidates: np.ndarray, img_w: int, img_h: int) -> np.nd
 
 
 def check_alignment_bytes(image_bytes: bytes) -> bool:
-    array = np.frombuffer(image_bytes, dtype=np.uint8)
-    color = cv2.imdecode(array, cv2.IMREAD_COLOR)
+    color = decode_image_exif_aware(image_bytes)
     if color is None:
         return False
     return check_alignment(color)

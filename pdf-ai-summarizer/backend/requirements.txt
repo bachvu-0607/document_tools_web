@@ -15,6 +15,7 @@ python-docx
 openpyxl
 opencv-python-headless
 numpy
+pillow
 aiosqlite
 bcrypt
 pyjwt

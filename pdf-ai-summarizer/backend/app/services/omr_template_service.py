@@ -15,7 +15,7 @@ from app.core.omr_database import (
     save_template_record,
 )
 from app.schemas.omr import AnswerBlock, OmrTemplateCreateRequest, OmrTemplateResponse, ZoneRect
-from app.services.omr_align_service import align_image, detect_all_markers_normalized
+from app.services.omr_align_service import align_image, decode_image_exif_aware, detect_all_markers_normalized
 from app.services.omr_storage import get_omr_sheet_file
 
 MAX_ANSWER_BLOCKS = 3
@@ -67,8 +67,7 @@ async def _capture_marker_layout(sheet_id: str, user_id: str) -> str:
     # cu thay vi duoc tinh chinh - khong nghiem trong bang loi tao mau.
     try:
         file_bytes, _ = await get_omr_sheet_file(sheet_id, user_id)
-        array = np.frombuffer(file_bytes, dtype=np.uint8)
-        color = cv2.imdecode(array, cv2.IMREAD_COLOR)
+        color = decode_image_exif_aware(file_bytes)
         if color is None:
             return json.dumps([])
         aligned, was_aligned = align_image(color)
