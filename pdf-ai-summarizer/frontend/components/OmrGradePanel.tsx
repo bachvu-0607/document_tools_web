@@ -28,6 +28,49 @@ type OmrGradePanelProps = {
   initialSheetIds?: string[];
 };
 
+// Quan ly rieng vong doi cac sheet_id tao qua camera (chup 1 lan de doc,
+// khong can luu lau dai - xem OmrGradePanel). Tach het phan ref/co unmount/
+// logic giu-hay-xoa ra day, de noi goi (handleCameraCaptured) chi con doc
+// dung nghia "chup xong -> cham", khong lan ca quan ly vong doi anh vao.
+function useEphemeralCameraSheets() {
+  const idsRef = useRef<Set<string>>(new Set());
+  const unmountedRef = useRef(false);
+
+  function deleteSheets(ids: Iterable<string>) {
+    for (const id of ids) {
+      void deleteOmrSheet(id).catch(() => {
+        // Best-effort - khong chan luong chinh neu xoa that bai.
+      });
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      unmountedRef.current = true;
+      deleteSheets(idsRef.current);
+    };
+  }, []);
+
+  return {
+    // Ghi nhan 1 anh moi thay the toan bo anh dang theo doi truoc do. Tra ve
+    // 1 ham "resolve" - goi voi ket qua cham (thanh cong/that bai) khi biet:
+    // thanh cong (hoac da roi tab, khong con co hoi don sau) -> xoa ngay anh
+    // cu; con o trong tab ma that bai -> giu lai ca anh cu lan anh moi, phong
+    // nguoi dung can thu cham lai.
+    replace(newId: string): (success: boolean) => void {
+      const previousIds = Array.from(idsRef.current);
+      idsRef.current = new Set([newId]);
+      return (success: boolean) => {
+        if (success || unmountedRef.current) {
+          deleteSheets(previousIds);
+        } else {
+          idsRef.current = new Set([...previousIds, newId]);
+        }
+      };
+    },
+  };
+}
+
 export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
   const [sheets, setSheets] = useState<OmrSheetResponse[]>([]);
   const [answerKeys, setAnswerKeys] = useState<OmrAnswerKeyResponse[]>([]);
@@ -54,22 +97,8 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
 
   // Anh chup qua camera trong tab nay chi dung 1 lan de doc, khong can giu
   // lai lau dai (khac voi anh tai len thu cong o tab Upload - van luu binh
-  // thuong). Theo doi rieng cac sheet_id tao qua camera trong phien lam viec
-  // nay, xoa het khoi database ngay khi ROI KHOI tab Cham bai (xem useEffect
-  // cleanup ben duoi) - tranh tich rac database ma khong anh huong Bang diem
-  // (ket qua da luu vao omr_graded_results la du lieu doc lap, khong phu
-  // thuoc anh goc con ton tai hay khong).
-  const cameraSheetIdsRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    return () => {
-      for (const id of cameraSheetIdsRef.current) {
-        void deleteOmrSheet(id).catch(() => {
-          // Best-effort - khong chan viec chuyen tab neu xoa that bai.
-        });
-      }
-    };
-  }, []);
+  // thuong) - xem useEphemeralCameraSheets o dau file.
+  const cameraSheets = useEphemeralCameraSheets();
 
   async function refreshSheets() {
     try {
@@ -108,14 +137,14 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
     // phieu vua chup, va cham luon ngay - dung cho luong quet lien tuc tung
     // bai 1 bang camera (chup - xem diem - nhac phieu ra - chup bai tiep),
     // khong con phai tu tay bo chon phieu cu / bam nut Cham moi lan.
-    cameraSheetIdsRef.current.add(sheet.id);
+    const resolveCameraSheet = cameraSheets.replace(sheet.id);
     setSelectedSheetIds([sheet.id]);
     void refreshSheets();
-    void handleGrade([sheet.id]);
+    void handleGrade([sheet.id]).then(resolveCameraSheet);
   }
 
-  async function handleGrade(sheetIds: string[] = selectedSheetIds) {
-    if (!answerKeyId || sheetIds.length === 0) return;
+  async function handleGrade(sheetIds: string[] = selectedSheetIds): Promise<boolean> {
+    if (!answerKeyId || sheetIds.length === 0) return false;
     setGrading(true);
     setGradeError("");
     try {
@@ -124,8 +153,10 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
       setActiveIndex(0);
       setSavedSheetIds(new Set());
       setSaveResultsError("");
+      return true;
     } catch (error) {
       setGradeError(error instanceof Error ? error.message : "Không chấm được");
+      return false;
     } finally {
       setGrading(false);
     }
@@ -219,33 +250,21 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
       </div>
 
       <div className="mt-5 grid gap-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="grid gap-2 text-sm font-medium">
-            Đáp án chuẩn
-            <select
-              className="min-h-10 rounded-lg border border-zinc-300 bg-zinc-50 px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-600"
-              onChange={(event) => setAnswerKeyId(event.target.value)}
-              value={answerKeyId}
-            >
-              {answerKeys.length === 0 ? <option value="">Chưa có đáp án nào</option> : null}
-              {answerKeys.map((key) => (
-                <option key={key.id} value={key.id}>
-                  {key.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-2 text-sm font-medium">
-            Lớp (để lưu vào bảng điểm)
-            <input
-              className="min-h-10 rounded-lg border border-zinc-300 bg-zinc-50 px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-600"
-              onChange={(event) => setClassName(event.target.value)}
-              placeholder="VD: 10A1"
-              type="text"
-              value={className}
-            />
-          </label>
-        </div>
+        <label className="grid gap-2 text-sm font-medium">
+          Đáp án chuẩn
+          <select
+            className="min-h-10 rounded-lg border border-zinc-300 bg-zinc-50 px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-600"
+            onChange={(event) => setAnswerKeyId(event.target.value)}
+            value={answerKeyId}
+          >
+            {answerKeys.length === 0 ? <option value="">Chưa có đáp án nào</option> : null}
+            {answerKeys.map((key) => (
+              <option key={key.id} value={key.id}>
+                {key.name}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <div className="grid gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
           <p className="text-sm font-medium">Hoặc chụp trực tiếp bằng camera — tự thêm vào danh sách cần chấm bên dưới</p>
@@ -315,25 +334,31 @@ export function OmrGradePanel({ initialSheetIds }: OmrGradePanelProps) {
               })}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="grid gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 {savedSheetIds.size === results.length && results.length > 0
                   ? `✓ Đã lưu ${results.length} kết quả vào bảng điểm lớp "${className.trim()}"`
                   : "Xem qua từng bài, sửa nếu cần, rồi lưu chốt cả đợt vào bảng điểm."}
               </p>
-              <Button
-                className="!min-h-8 !px-3 !text-xs"
-                disabled={!className.trim()}
-                loading={savingResults}
-                onClick={() => void handleSaveAllResults()}
-                type="button"
-              >
-                💾 Lưu tất cả kết quả ({results.length})
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  className="min-h-9 min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-600"
+                  onChange={(event) => setClassName(event.target.value)}
+                  placeholder="Lớp — VD: 10A1"
+                  type="text"
+                  value={className}
+                />
+                <Button
+                  className="!min-h-9 !px-3 !text-xs shrink-0"
+                  disabled={!className.trim()}
+                  loading={savingResults}
+                  onClick={() => void handleSaveAllResults()}
+                  type="button"
+                >
+                  💾 Lưu tất cả kết quả ({results.length})
+                </Button>
+              </div>
             </div>
-            {!className.trim() ? (
-              <p className="text-xs text-amber-600 dark:text-amber-400">Cần nhập tên Lớp ở trên để lưu được vào bảng điểm.</p>
-            ) : null}
             {saveResultsError ? <p className="text-sm text-red-600 dark:text-red-400">{saveResultsError}</p> : null}
 
             <div className="flex items-center justify-between">
