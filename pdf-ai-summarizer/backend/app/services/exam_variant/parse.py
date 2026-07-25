@@ -100,8 +100,15 @@ def _iter_body_items(document: Document):
 
 
 def parse_exam_document(document: Document) -> list[Part]:
-    parts: list[Part] = []
-    current_part: Part | None = None
+    # Luon co san 1 "part mac dinh" (title rong) tu dau - vi mot so de khong
+    # dung dang tieu de "I. LISTENING" ma chi ghi tron "LISTENING" (khong so
+    # La Ma) hoac khong co tieu de Phan nao ca. Neu bat cau hoi phai cho toi
+    # khi khop duoc PART_HEADER_RE moi bat dau ghi nhan, nhung file kieu do
+    # se lam MAT TRANG toan bo cau hoi (current_part luon None -> flush bi
+    # bo qua) ma khong bao loi gi ca.
+    default_part = Part(title="")
+    parts: list[Part] = [default_part]
+    current_part: Part | None = default_part
     current_question: Question | None = None
     pending_label: list[str | None] = [None]
 
@@ -267,18 +274,24 @@ def validate_exam(parts: list[Part]) -> list[str]:
     issues: list[str] = []
     all_numbers = sorted(q.number for part in parts for q in part.questions)
 
-    if all_numbers:
-        # Luon gia dinh de bat dau tu cau 1 - khong dung all_numbers[0] lam moc
-        # dau, vi neu ca 1 khoang cau dau (vi du cau 1-4) mat hoan toan (nam
-        # trong bang, khong doc duoc), all_numbers[0] se la so cua cau DAU
-        # TIEN DOC DUOC (vi du 5), khien khoang thieu truoc do bi lot mat.
-        expected = set(range(1, all_numbers[-1] + 1))
-        missing = sorted(expected - set(all_numbers))
-        if missing:
-            issues.append(
-                f"Khong tim thay cau: {', '.join(str(n) for n in missing)} "
-                "(co the do nam trong bang - xem canh bao 'file co N bang' va sua file goc, bo bang)"
-            )
+    if not all_numbers:
+        issues.append(
+            "Khong doc duoc cau hoi nao tu file. Kiem tra dinh dang: cau hoi phai "
+            "ghi dang \"Question 1.\" hoac \"Cau 1.\" (co dau cham/hai cham sau so)."
+        )
+        return issues
+
+    # Luon gia dinh de bat dau tu cau 1 - khong dung all_numbers[0] lam moc
+    # dau, vi neu ca 1 khoang cau dau (vi du cau 1-4) mat hoan toan (nam
+    # trong bang, khong doc duoc), all_numbers[0] se la so cua cau DAU TIEN
+    # DOC DUOC (vi du 5), khien khoang thieu truoc do bi lot mat.
+    expected = set(range(1, all_numbers[-1] + 1))
+    missing = sorted(expected - set(all_numbers))
+    if missing:
+        issues.append(
+            f"Khong tim thay cau: {', '.join(str(n) for n in missing)} "
+            "(co the do nam trong bang - xem canh bao 'file co N bang' va sua file goc, bo bang)"
+        )
 
     for part in parts:
         for question in part.questions:
