@@ -1,8 +1,10 @@
 FROM python:3.13-slim
 
 # WeasyPrint (xuat PDF tom tat) can cairo/pango/gdk-pixbuf/libffi; OpenCV (OMR)
-# can libgomp1 de chay da luong - tren macOS cai qua Homebrew, tren Linux (container
-# nay) phai apt-get thu cong vi pip khong cai duoc thu vien he thong.
+# can libgomp1 de chay da luong; libreoffice-writer cung cap lenh "soffice"
+# dung de convert .doc -> .docx (tinh nang tao mã đề) - tren macOS cai qua
+# Homebrew, tren Linux (container nay) phai apt-get thu cong vi pip khong
+# cai duoc thu vien/ung dung he thong.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libcairo2 \
     libpango-1.0-0 \
@@ -11,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi8 \
     shared-mime-info \
     libgomp1 \
+    libreoffice-writer \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -22,7 +25,7 @@ COPY . .
 
 # Thu muc du lieu ben vung - gan Volume vao /app/data tren Railway de khong mat
 # du lieu (SQLite + anh upload) moi lan redeploy.
-RUN mkdir -p /app/data/database /app/data/uploads /app/data/outputs /app/data/omr_uploads
+RUN mkdir -p /app/data/database /app/data/uploads /app/data/outputs /app/data/omr_uploads /app/data/exam_variants
 
 EXPOSE 8000
 
