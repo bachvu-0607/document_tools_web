@@ -23,8 +23,14 @@ class Settings:
     #PDF
     max_upload_mb: int = int(os.getenv("MAX_UPLOAD_MB", "50"))
     upload_dir: str = os.getenv("UPLOAD_DIR", "../data/uploads")
+
     #OMR
     omr_upload_dir: str = os.getenv("OMR_UPLOAD_DIR", "../data/omr_uploads")
+
+    #exam_variant
+    exam_variant_dir: str = os.getenv("EXAM_VARIANT_DIR", "../data/exam_variants")
+
+
     #openai
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-5-mini")

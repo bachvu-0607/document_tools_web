@@ -15,8 +15,8 @@ from app.core.omr_database import (
     save_template_record,
 )
 from app.schemas.omr import AnswerBlock, OmrTemplateCreateRequest, OmrTemplateResponse, ZoneRect
-from app.services.omr_align_service import align_image, decode_image_exif_aware, detect_all_markers_normalized
-from app.services.omr_storage import get_omr_sheet_file
+from app.services.omr.omr_align_service import align_image, decode_image_exif_aware, detect_all_markers_normalized
+from app.services.omr.omr_storage import get_omr_sheet_file
 
 MAX_ANSWER_BLOCKS = 3
 

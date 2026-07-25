@@ -5,8 +5,8 @@ from app.schemas.omr import (
     OmrGradeQuestionResult,
     OmrGradeSheetResult,
 )
-from app.services.omr_answer_key_service import get_omr_answer_key
-from app.services.omr_detect_service import get_or_run_detection
+from app.services.omr.omr_answer_key_service import get_omr_answer_key
+from app.services.omr.omr_detect_service import get_or_run_detection
 
 
 def _compare(correct_answers: list[str], detection_answers: list[str], ambiguous_questions: list[int]) -> list[OmrGradeQuestionResult]:

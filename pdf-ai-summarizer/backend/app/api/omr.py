@@ -17,34 +17,34 @@ from app.schemas.omr import (
     OmrTemplateResponse,
 )
 from app.services.auth_service import get_current_user, get_current_user_flexible
-from app.services.omr_align_service import check_alignment_bytes
-from app.services.omr_answer_key_service import (
+from app.services.omr.omr_align_service import check_alignment_bytes
+from app.services.omr.omr_answer_key_service import (
     create_answer_key,
     delete_omr_answer_key,
     get_omr_answer_key,
     list_omr_answer_keys,
 )
-from app.services.omr_detect_service import (
+from app.services.omr.omr_detect_service import (
     get_saved_detection,
     override_detection,
     render_preview_image,
     run_detection,
 )
-from app.services.omr_grade_service import grade_sheets_batch
-from app.services.omr_results_service import (
+from app.services.omr.omr_grade_service import grade_sheets_batch
+from app.services.omr.omr_results_service import (
     delete_omr_graded_result,
     export_graded_results_excel,
     list_omr_graded_results,
     save_graded_results,
 )
-from app.services.omr_storage import (
+from app.services.omr.omr_storage import (
     delete_omr_sheet,
     get_omr_sheet_aligned_bytes,
     get_omr_sheet_file,
     list_omr_sheets,
     save_omr_sheet,
 )
-from app.services.omr_template_service import (
+from app.services.omr.omr_template_service import (
     create_omr_template,
     delete_omr_template,
     get_omr_template,

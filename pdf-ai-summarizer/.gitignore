@@ -29,6 +29,8 @@ data/database/*
 !data/database/.gitkeep
 data/omr_uploads/*
 !data/omr_uploads/.gitkeep
+data/exam_variants/*
+!data/exam_variants/.gitkeep
 
 # Logs
 *.log

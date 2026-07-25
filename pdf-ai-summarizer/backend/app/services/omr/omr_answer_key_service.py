@@ -11,7 +11,7 @@ from app.core.omr_database import (
     save_answer_key_record,
 )
 from app.schemas.omr import OmrAnswerKeyCreateRequest, OmrAnswerKeyResponse
-from app.services.omr_template_service import get_omr_template
+from app.services.omr.omr_template_service import get_omr_template
 
 
 def _row_to_response(row) -> OmrAnswerKeyResponse:

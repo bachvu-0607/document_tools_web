@@ -16,7 +16,8 @@ from app.core.omr_database import (
     save_sheet_record,
 )
 from app.schemas.omr import OmrSheetResponse
-from app.services.omr_align_service import align_image, decode_image_exif_aware
+from app.services.omr.omr_align_service import align_image, decode_image_exif_aware
+from app.services.path_service import resolve_stored_file
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 EXT_TO_CONTENT_TYPE = {
@@ -89,9 +90,7 @@ async def get_omr_sheet_file(sheet_id: str, user_id: str) -> tuple[bytes, str]:
     if row is None:
         raise HTTPException(status_code=404, detail="Sheet not found")
 
-    file_path = Path(settings.omr_upload_dir) / row["stored_filename"]
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Sheet not found")
+    file_path = resolve_stored_file(settings.omr_upload_dir, row["stored_filename"], "Sheet not found")
 
     return file_path.read_bytes(), row["content_type"]
 

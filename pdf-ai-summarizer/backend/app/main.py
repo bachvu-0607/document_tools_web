@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.documents import router as documents_router
+from app.api.exam_variant import router as exam_variant_router
 from app.api.images import router as images_router
 from app.api.omr import router as omr_router
 from app.api.summaries import router as summaries_router
@@ -47,6 +48,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(health_router, prefix=settings.api_prefix)
 app.include_router(documents_router, prefix=settings.api_prefix)
+app.include_router(exam_variant_router, prefix=settings.api_prefix)
 app.include_router(images_router, prefix=settings.api_prefix)
 app.include_router(omr_router, prefix=settings.api_prefix)
 app.include_router(summaries_router, prefix=settings.api_prefix)

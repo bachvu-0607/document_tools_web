@@ -561,6 +561,29 @@ export async function exportOmrResultsExcel(resultIds: string[]): Promise<Blob> 
   return response.blob();
 }
 
+export async function generateExamVariants(
+  file: File,
+  startCode: number,
+  count: number,
+): Promise<Blob> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("start_code", String(startCode));
+  formData.append("count", String(count));
+
+  const response = await fetch(`${API_BASE_URL}/api/exam-variants/generate`, {
+    method: "POST",
+    headers: { ...authHeader() },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+
+  return response.blob();
+}
+
 export async function checkOmrAlignment(blob: Blob): Promise<boolean> {
   const formData = new FormData();
   formData.append("file", blob, "check.jpg");

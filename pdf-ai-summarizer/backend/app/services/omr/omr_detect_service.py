@@ -9,9 +9,9 @@ from fastapi import HTTPException
 
 from app.core.omr_database import get_detection, get_template_marker_layout, save_detection_record
 from app.schemas.omr import AnswerBlock, OmrDetectionResponse, OmrTemplateResponse, ZoneRect
-from app.services.omr_align_service import align_image_with_template, decode_image_exif_aware
-from app.services.omr_storage import get_omr_sheet_file
-from app.services.omr_template_service import get_omr_template
+from app.services.omr.omr_align_service import align_image_with_template, decode_image_exif_aware
+from app.services.omr.omr_storage import get_omr_sheet_file
+from app.services.omr.omr_template_service import get_omr_template
 
 # "confident" = chac chan (xanh), "ambiguous" = 1 o duoc chon nhung tin cay
 # chua cao (cam), "multi" = phat hien >=2 o CUNG TU no da du dam de tinh la

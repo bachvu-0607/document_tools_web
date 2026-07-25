@@ -9,6 +9,7 @@ import { ConnectionBadge } from "@/components/ConnectionBadge";
 import type { ConnectionState } from "@/components/ConnectionBadge";
 import { DocumentPanel } from "@/components/DocumentPanel";
 import { DocxExportPanel } from "@/components/DocxExportPanel";
+import { ExamVariantPanel } from "@/components/ExamVariantPanel";
 import { ImageToolsPanel } from "@/components/ImageToolsPanel";
 import { OmrPanel, OMR_TAB_LABELS, OMR_TAB_ORDER } from "@/components/OmrPanel";
 import type { OmrSubTab } from "@/components/OmrPanel";
@@ -78,7 +79,7 @@ const extractionModes = [
 ];
 
 type DocumentToolTab = "summarize" | "translate" | "docx" | "tools" | "image-tools";
-type AppSection = "documents" | "omr";
+type AppSection = "documents" | "omr" | "examVariant";
 
 const documentToolConfig: { id: DocumentToolTab; label: string }[] = [
   { id: "summarize", label: "Tóm tắt" },
@@ -267,6 +268,11 @@ function HomePageContent({ user, onLogout }: HomePageContentProps) {
     setSidebarOpen(false);
   }
 
+  function selectExamVariant() {
+    setActiveSection("examVariant");
+    setSidebarOpen(false);
+  }
+
   const sidebarContent = (
     <nav className="grid gap-1">
       <p className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
@@ -314,6 +320,20 @@ function HomePageContent({ user, onLogout }: HomePageContentProps) {
           );
         })}
       </div>
+
+      <div className="my-2 border-t border-zinc-200 dark:border-zinc-800" />
+
+      <button
+        className={`rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
+          activeSection === "examVariant"
+            ? "bg-emerald-600 text-white shadow-sm"
+            : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        }`}
+        onClick={selectExamVariant}
+        type="button"
+      >
+        Tạo mã đề
+      </button>
     </nav>
   );
 
@@ -353,7 +373,11 @@ function HomePageContent({ user, onLogout }: HomePageContentProps) {
                     Local PDF AI Summarizer
                   </p>
                   <h1 className="mt-1 bg-gradient-to-br from-zinc-950 to-zinc-600 bg-clip-text text-3xl font-semibold text-transparent dark:from-white dark:to-zinc-400 sm:text-4xl">
-                    {activeSection === "omr" ? "Chấm trắc nghiệm" : "Tóm tắt PDF"}
+                    {activeSection === "omr"
+                      ? "Chấm trắc nghiệm"
+                      : activeSection === "examVariant"
+                        ? "Tạo mã đề"
+                        : "Tóm tắt PDF"}
                   </h1>
                 </div>
               </div>
@@ -444,11 +468,15 @@ function HomePageContent({ user, onLogout }: HomePageContentProps) {
                   {documentTab === "image-tools" ? <ImageToolsPanel /> : null}
                 </div>
               </div>
-            ) : (
+            ) : activeSection === "omr" ? (
               // Cham trac nghiem la 1 module rieng, khong dung chung khung
               // "Tai lieu" ben trai - de no chiem toan bo chieu ngang thay vi
               // bi bo hep trong 1 cot nhu cac tool tren.
               <OmrPanel activeTab={omrTab} onTabChange={setOmrTab} />
+            ) : (
+              <div className="mx-auto w-full max-w-xl">
+                <ExamVariantPanel />
+              </div>
             )}
           </div>
         </div>

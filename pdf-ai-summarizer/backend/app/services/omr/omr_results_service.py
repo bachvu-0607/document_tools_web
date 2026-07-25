@@ -14,8 +14,8 @@ from app.core.omr_database import (
     save_graded_result_record,
 )
 from app.schemas.omr import OmrGradedResultResponse, OmrGradedResultSaveRequest
-from app.services.omr_answer_key_service import get_omr_answer_key
-from app.services.omr_grade_service import grade_sheet
+from app.services.omr.omr_answer_key_service import get_omr_answer_key
+from app.services.omr.omr_grade_service import grade_sheet
 
 
 def _row_to_response(row) -> OmrGradedResultResponse:
