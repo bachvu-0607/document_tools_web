@@ -7,6 +7,12 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # Repo goc chua nhieu project khac ngoai pdf-ai-summarizer/ - chi build lai
+    # khi co thay doi trong thu muc nay (hoac chinh workflow nay) de khoi ton
+    # thoi gian CI cho cac project khac.
+    paths:
+      - "pdf-ai-summarizer/**"
+      - ".github/workflows/docker-publish.yml"
   workflow_dispatch:
 
 permissions:
@@ -20,10 +26,10 @@ jobs:
       matrix:
         include:
           - name: backend
-            context: ./backend
+            context: ./pdf-ai-summarizer/backend
             build-args: ""
           - name: frontend
-            context: ./frontend
+            context: ./pdf-ai-summarizer/frontend
             build-args: |
               NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
     steps:

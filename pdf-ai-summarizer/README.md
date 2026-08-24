@@ -45,7 +45,7 @@ Chi can Docker + Docker Compose la du:
 
 ```bash
 git clone https://github.com/bachvu-0607/document_tools_web.git
-cd document_tools_web
+cd document_tools_web/pdf-ai-summarizer   # code nam trong thu muc con nay
 cp .env.example .env   # dien OPENAI_API_KEY va JWT_SECRET_KEY that
 docker compose pull    # tai image co san tu GHCR, khong build lai
 docker compose up -d
