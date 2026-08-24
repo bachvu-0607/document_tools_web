@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
-// Cau hinh rieng cho Next.js. Hien tai dung mac dinh nen object de trong.
-const nextConfig = {};
+// output: 'standalone' de Docker build ra image gon (chi copy .next/standalone),
+// khong anh huong `next dev`/`next build` khi chay local binh thuong.
+const nextConfig = {
+  output: 'standalone',
+};
 
 export default nextConfig;

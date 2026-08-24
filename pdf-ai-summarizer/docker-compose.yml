@@ -1,0 +1,35 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    image: ghcr.io/bachvu-0607/document_tools_web-backend:latest
+    ports:
+      - "8000:8000"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?can OPENAI_API_KEY trong file .env}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      DATABASE_URL: /app/data/database/app.sqlite3
+      UPLOAD_DIR: /app/data/uploads
+      OMR_UPLOAD_DIR: /app/data/omr_uploads
+      EXAM_VARIANT_DIR: /app/data/exam_variants
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?can JWT_SECRET_KEY trong file .env, tu tao chuoi ngau nhien bat ky}
+    volumes:
+      - backend-data:/app/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    image: ghcr.io/bachvu-0607/document_tools_web-frontend:latest
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  backend-data:

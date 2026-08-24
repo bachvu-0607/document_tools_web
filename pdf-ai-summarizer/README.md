@@ -37,7 +37,32 @@ Ung dung web chay local: tai len file PDF, dung OpenAI de tom tat / dich / doc n
 
 **Frontend:** Next.js 16 (App Router), React 18, TypeScript, Tailwind CSS.
 
-## Yeu cau he thong
+## Chay bang Docker (tai ve dung ngay, khong can cai Python/Node)
+
+CI tu dong build va day image len GitHub Container Registry moi lan co code
+moi tren `main` ([.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)).
+Chi can Docker + Docker Compose la du:
+
+```bash
+git clone https://github.com/bachvu-0607/document_tools_web.git
+cd document_tools_web
+cp .env.example .env   # dien OPENAI_API_KEY va JWT_SECRET_KEY that
+docker compose pull    # tai image co san tu GHCR, khong build lai
+docker compose up -d
+```
+
+- Frontend: http://localhost:3000
+- Backend: http://localhost:8000
+
+Neu package tren GHCR dang o che do private, vao
+`https://github.com/bachvu-0607?tab=packages` bat public cho 2 package
+`document_tools_web-backend` va `document_tools_web-frontend`, hoac
+`docker login ghcr.io` bang tai khoan co quyen truoc khi `pull`.
+
+Muon tu build lai image tu code local thay vi tai san co thi doi
+`docker compose pull` thanh `docker compose up -d --build`.
+
+## Yeu cau he thong (chay khong dung Docker)
 
 - Python 3.13, Node.js + `pnpm`.
 - WeasyPrint (xuat PDF tom tat) can vai thu vien he thong — tren macOS cai qua Homebrew:
