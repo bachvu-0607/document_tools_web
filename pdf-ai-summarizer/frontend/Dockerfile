@@ -10,6 +10,9 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Project khong co san thu muc public/ (khong dung static asset) - tao rong de
+# buoc COPY --from=builder /app/public o stage runner khong bi loi "not found".
+RUN mkdir -p ./public
 # Backend that phuc vu frontend luc chay - override qua NEXT_PUBLIC_API_BASE_URL
 # o build-time neu build khac docker-compose mac dinh.
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
